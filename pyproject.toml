@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "prettytable>=3.18.0",
+    "python-dotenv>=1.2.4",
     "requests>=2.34.2",
 ]
 
@@ -19,7 +20,7 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "valutatrade_hub"
 module-root = ""
-source-include = ["main.py", "data/README.md", "uv.lock"]
+source-include = ["main.py", "data/README.md", "uv.lock", ".env.example"]
 
 [tool.ruff]
 target-version = "py314"

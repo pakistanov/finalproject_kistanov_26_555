@@ -42,13 +42,17 @@ exit
 
 ## Сервис парсинга
 
-Курсы загружаются из CoinGecko и ExchangeRate-API. Ключи задаются в окружении
-PowerShell перед запуском приложения:
+Курсы загружаются из CoinGecko и ExchangeRate-API. Скопируйте `.env.example`
+в `.env` в корне проекта (если файла ещё нет) и укажите ключи:
 
-```powershell
-$env:EXCHANGERATE_API_KEY = "ваш_ключ"
-$env:COINGECKO_API_KEY = "ваш_Demo_ключ"
+```dotenv
+EXCHANGERATE_API_KEY=ваш_ключ
+COINGECKO_API_KEY=ваш_Demo_ключ
 ```
+
+Приложение читает `.env` автоматически; переменные окружения имеют приоритет.
+`.env` исключён из Git и сборки. Для сдачи используется `.env.example`;
+проверяющий заполняет свой `.env`. При необходимости ключ передаётся отдельно.
 
 Ключи: [ExchangeRate-API](https://www.exchangerate-api.com/docs/standard-requests),
 [CoinGecko Demo](https://docs.coingecko.com/demo/reference/authentication).

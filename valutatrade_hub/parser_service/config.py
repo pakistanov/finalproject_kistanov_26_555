@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
+from dotenv import dotenv_values
+
 from valutatrade_hub.core.currencies import CryptoCurrency, FiatCurrency, get_currency
+from valutatrade_hub.core.exceptions import StorageError
 from valutatrade_hub.core.utils import validate_number
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
@@ -17,13 +20,28 @@ CRYPTO_CURRENCIES = ("BTC", "ETH", "SOL")
 CRYPTO_ID_MAP = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana"}
 
 
+def _get_api_key(name: str) -> str | None:
+    """Окружение имеет приоритет над локальным .env в рабочем каталоге."""
+    value = os.getenv(name)
+    if value is None:
+        try:
+            value = dotenv_values(
+                Path.cwd() / ".env", interpolate=False, encoding="utf-8-sig"
+            ).get(name)
+        except OSError, UnicodeError:
+            raise StorageError("Не удалось прочитать файл .env") from None
+    if value is None:
+        return None
+    return value.strip() or None
+
+
 @dataclass
 class ParserConfig:
     EXCHANGERATE_API_KEY: str | None = field(
-        default_factory=lambda: os.getenv("EXCHANGERATE_API_KEY"), repr=False
+        default_factory=lambda: _get_api_key("EXCHANGERATE_API_KEY"), repr=False
     )
     COINGECKO_API_KEY: str | None = field(
-        default_factory=lambda: os.getenv("COINGECKO_API_KEY"), repr=False
+        default_factory=lambda: _get_api_key("COINGECKO_API_KEY"), repr=False
     )
     COINGECKO_URL: str = COINGECKO_URL
     EXCHANGERATE_API_URL: str = EXCHANGERATE_API_URL
