@@ -1,7 +1,6 @@
 """Разбор команд и вывод результатов без бизнес-логики сделок."""
 
 import argparse
-import os
 import shlex
 import sys
 from importlib.metadata import version
@@ -9,10 +8,16 @@ from typing import TextIO
 
 from prettytable import PrettyTable
 
-from valutatrade_hub.core.exceptions import StorageError
+from valutatrade_hub.core.currencies import get_supported_codes
+from valutatrade_hub.core.exceptions import (
+    ApiRequestError,
+    CurrencyNotFoundError,
+    InsufficientFundsError,
+    StorageError,
+)
 from valutatrade_hub.core.rates import RateQuote
-from valutatrade_hub.core.storage import JsonStorage
 from valutatrade_hub.core.usecases import PortfolioView, TradeResult, TradingService
+from valutatrade_hub.infra.database import DatabaseManager
 
 
 class CommandExit(Exception):
@@ -42,8 +47,10 @@ def build_parser(*, global_options: bool = False) -> CommandParser:
     if global_options:
         parser.add_argument(
             "--data-dir",
-            default=os.environ.get("VALUTATRADE_DATA_DIR", "data"),
-            help="Каталог JSON-данных (по умолчанию data или VALUTATRADE_DATA_DIR)",
+            help=(
+                "Каталог JSON-данных "
+                "(по умолчанию из настроек или VALUTATRADE_DATA_DIR)"
+            ),
         )
     parser.add_argument(
         "--version",
@@ -59,7 +66,7 @@ def build_parser(*, global_options: bool = False) -> CommandParser:
         child.add_argument("--username", required=True)
         child.add_argument("--password", required=True)
     portfolio = commands.add_parser("show-portfolio", help="Посмотреть портфель")
-    portfolio.add_argument("--base", default="USD")
+    portfolio.add_argument("--base", help="Базовая валюта (по умолчанию из настроек)")
     for command, help_text in (
         ("buy", "Купить валюту за USD"),
         ("sell", "Продать валюту за USD"),
@@ -71,6 +78,7 @@ def build_parser(*, global_options: bool = False) -> CommandParser:
     rate = commands.add_parser("get-rate", help="Получить курс валюты")
     rate.add_argument("--from", dest="from_currency", required=True)
     rate.add_argument("--to", dest="to_currency", required=True)
+    commands.add_parser("currencies", help="Список поддерживаемых валют")
     commands.add_parser("logout", help="Завершить текущую сессию")
     commands.add_parser("help", help="Показать справку")
     commands.add_parser("exit", help="Выйти из приложения")
@@ -97,6 +105,16 @@ def format_source(source: str) -> str:
     if "DemoStub" in source:
         return f"{source} (фиксированные демонстрационные курсы)"
     return source
+
+
+def format_error(error: Exception) -> str:
+    if isinstance(error, InsufficientFundsError):
+        return str(error)
+    if isinstance(error, CurrencyNotFoundError):
+        return f"{error}. Поддерживаемые валюты: {', '.join(get_supported_codes())}"
+    if isinstance(error, ApiRequestError):
+        return f"{error}. Повторите попытку позже или проверьте сеть."
+    return f"Ошибка: {error}"
 
 
 def format_quote(quote: RateQuote) -> str:
@@ -168,6 +186,11 @@ class WalletApplication:
                         arguments.from_currency, arguments.to_currency
                     )
                 )
+            case "currencies":
+                message = "\n".join(
+                    currency.get_display_info()
+                    for currency in self.service.list_currencies()
+                )
             case "help":
                 self.parser.print_help(file=self.output)
                 return True
@@ -188,8 +211,8 @@ class WalletApplication:
         except CommandExit as exc:
             if exc.message:
                 print(f"Ошибка: {exc.message}", file=self.output)
-        except (ValueError, StorageError) as exc:
-            print(f"Ошибка: {exc}", file=self.output)
+        except (ValueError, ApiRequestError, StorageError) as exc:
+            print(format_error(exc), file=self.output)
         return True
 
     def run(self) -> int:
@@ -219,12 +242,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Ошибка: {exc.message}", file=sys.stderr)
         return exc.status
     try:
-        storage = JsonStorage(arguments.data_dir)
+        storage = DatabaseManager(arguments.data_dir)
         application = WalletApplication(TradingService(storage))
         if arguments.command is None:
             return application.run()
         application.dispatch(arguments)
-    except (ValueError, StorageError) as exc:
-        print(f"Ошибка: {exc}", file=sys.stderr)
+    except (ValueError, ApiRequestError, StorageError) as exc:
+        print(format_error(exc), file=sys.stderr)
         return 1
     return 0

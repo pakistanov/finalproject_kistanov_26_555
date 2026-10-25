@@ -19,8 +19,8 @@ def normalize_currency(currency_code: str) -> str:
     if not isinstance(currency_code, str):
         raise ValueError("Код валюты должен быть непустой строкой")
     code = currency_code.strip().upper()
-    if not re.fullmatch(r"[A-Z][A-Z0-9]*", code):
-        raise ValueError("Код валюты должен содержать латинские буквы и цифры")
+    if not re.fullmatch(r"[A-Z][A-Z0-9]{1,4}", code):
+        raise ValueError("Код валюты должен содержать 2–5 латинских букв или цифр")
     return code
 
 
