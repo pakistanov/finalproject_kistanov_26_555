@@ -1,0 +1,32 @@
+[project]
+name = "finalproject_kistanov_26_555"
+version = "0.1.0"
+description = "Консольное приложение для работы с валютным кошельком"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "prettytable>=3.18.0",
+]
+
+[project.scripts]
+finalproject_kistanov_26_555 = "finalproject_kistanov_26_555.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17.2",
+]
