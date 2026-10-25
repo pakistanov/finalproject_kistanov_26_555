@@ -150,7 +150,6 @@ uv run finalproject_kistanov_26_555 --data-dir ./another-data get-rate --from BT
 ```powershell
 uv run ruff check .
 uv run ruff format --check .
-uv run python -m unittest discover -s tests -v
 ```
 
 Для применения исправлений и форматирования:
@@ -161,9 +160,7 @@ uv run ruff format .
 ```
 
 Включены проверки ошибок, импортов, распространённых проблем и современного
-синтаксиса Python. Длина строки — 88 символов. Тесты используют `unittest`
-из стандартной библиотеки и отдельный временный каталог для каждого теста:
-проверяют сделки, сессии, кэш, ошибки CLI и сохранность JSON при сбоях.
+синтаксиса Python. Длина строки — 88 символов.
 
 ## Сборка и установка пакета
 
@@ -191,7 +188,6 @@ FinalProject/
 ├── main.py
 ├── pyproject.toml
 ├── README.md
-├── tests/
 ├── uv.lock
 ├── uv.toml
 └── src/
@@ -231,7 +227,6 @@ git switch develop
 git switch -c feature/next-task develop
 uv run ruff check .
 uv run ruff format --check .
-uv run python -m unittest discover -s tests
 git add .
 git commit -m "feat: describe completed task"
 git switch develop
