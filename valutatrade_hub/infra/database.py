@@ -17,6 +17,7 @@ class JsonStorage:
     def __init__(
         self, data_dir: str | Path = "data", *, filenames: dict[str, str] | None = None
     ) -> None:
+        """Подготовить JSON-хранилище в выбранном каталоге."""
         self.data_dir = Path(data_dir)
         self._filenames = filenames or {}
         try:
@@ -40,6 +41,7 @@ class JsonStorage:
         atomic_write_json(self._path(filename), data)
 
     def load_users(self) -> list[User]:
+        """Загрузить пользователей и проверить уникальность имён и ID."""
         data = self._read("users.json", list)
         try:
             users = [User.from_dict(item) for item in data]
@@ -52,6 +54,7 @@ class JsonStorage:
         return users
 
     def load_portfolio_data(self) -> list[dict]:
+        """Прочитать портфели и проверить структуру и идентификаторы."""
         data = self._read("portfolios.json", list)
         try:
             identifiers = set()
@@ -87,6 +90,7 @@ class JsonStorage:
             raise
 
     def load_portfolio(self, user: User) -> Portfolio:
+        """Восстановить портфель и кошельки для переданного пользователя."""
         data = self.load_portfolio_data()
         item = next((item for item in data if item["user_id"] == user.user_id), None)
         if item is None:
@@ -102,6 +106,7 @@ class JsonStorage:
             raise StorageError("Некорректные кошельки в portfolios.json") from exc
 
     def save_portfolio(self, portfolio: Portfolio) -> None:
+        """Заменить данные существующего портфеля атомарной записью."""
         data = self.load_portfolio_data()
         for index, item in enumerate(data):
             if item["user_id"] == portfolio.user_id:
@@ -111,11 +116,13 @@ class JsonStorage:
         raise StorageError("Портфель пользователя не найден в portfolios.json")
 
     def load_rates(self) -> dict:
+        """Прочитать кэш курсов; вернуть пустой снимок при отсутствии файла."""
         return read_json(
             self._path("rates.json"), dict, default={"pairs": {}, "last_refresh": None}
         )
 
     def save_rates(self, rates: dict) -> None:
+        """Атомарно сохранить переданный снимок курсов."""
         self._write("rates.json", rates)
 
 
@@ -126,6 +133,7 @@ class DatabaseManager:
     _instance_lock = RLock()
 
     def __new__(cls, data_dir: str | Path | None = None):
+        """Вернуть единственный экземпляр класса под блокировкой."""
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
@@ -133,6 +141,7 @@ class DatabaseManager:
             return cls._instance
 
     def __init__(self, data_dir: str | Path | None = None) -> None:
+        """Один раз подключить JSON-хранилище и общую блокировку."""
         with self._instance_lock:
             if self._initialized:
                 if data_dir is not None and Path(data_dir).resolve() != self.data_dir:
@@ -151,6 +160,7 @@ class DatabaseManager:
 
     @property
     def data_dir(self) -> Path:
+        """Вернуть каталог JSON-данных."""
         return self._storage.data_dir
 
     @contextmanager
@@ -160,29 +170,36 @@ class DatabaseManager:
             yield self
 
     def load_users(self) -> list[User]:
+        """Загрузить пользователей под блокировкой общего хранилища."""
         with self._lock:
             return self._storage.load_users()
 
     def register_user(self, user: User) -> None:
+        """Сохранить пользователя и пустой портфель под блокировкой."""
         with self._lock:
             self._storage.register_user(user)
 
     def load_portfolio_data(self) -> list[dict]:
+        """Прочитать записи портфелей под блокировкой."""
         with self._lock:
             return self._storage.load_portfolio_data()
 
     def load_portfolio(self, user: User) -> Portfolio:
+        """Получить модель портфеля переданного пользователя."""
         with self._lock:
             return self._storage.load_portfolio(user)
 
     def save_portfolio(self, portfolio: Portfolio) -> None:
+        """Атомарно сохранить изменения модели портфеля."""
         with self._lock:
             self._storage.save_portfolio(portfolio)
 
     def load_rates(self) -> dict:
+        """Прочитать последний локальный снимок курсов."""
         with self._lock:
             return self._storage.load_rates()
 
     def save_rates(self, rates: dict) -> None:
+        """Записать снимок курсов под блокировкой."""
         with self._lock:
             self._storage.save_rates(rates)

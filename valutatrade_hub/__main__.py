@@ -1,6 +1,6 @@
 """Запуск платформы как Python-модуля."""
 
-from valutatrade_hub.cli.interface import main
+from valutatrade_hub.cli.interface import run
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())

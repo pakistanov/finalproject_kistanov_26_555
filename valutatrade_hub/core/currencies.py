@@ -17,23 +17,28 @@ class Currency(ABC):
     """Общий интерфейс валюты с проверяемыми публичными именем и кодом."""
 
     def __init__(self, name: str, code: str) -> None:
+        """Проверить и сохранить название и код валюты."""
         self.name = name
         self.code = code
 
     @property
     def name(self) -> str:
+        """Вернуть название валюты."""
         return self._name
 
     @name.setter
     def name(self, value: str) -> None:
+        """Проверить и установить название валюты."""
         self._name = _nonempty(value, "name")
 
     @property
     def code(self) -> str:
+        """Вернуть код валюты."""
         return self._code
 
     @code.setter
     def code(self, value: str) -> None:
+        """Проверить и установить код валюты."""
         self._code = normalize_currency(value)
 
     @abstractmethod
@@ -45,10 +50,12 @@ class FiatCurrency(Currency):
     """Фиатная валюта с указанием страны или зоны эмиссии."""
 
     def __init__(self, name: str, code: str, issuing_country: str) -> None:
+        """Добавить к валюте проверенную зону эмиссии."""
         super().__init__(name, code)
         self.issuing_country = _nonempty(issuing_country, "issuing_country")
 
     def get_display_info(self) -> str:
+        """Вернуть описание фиатной валюты с зоной эмиссии."""
         return f"[FIAT] {self.code} — {self.name} (Issuing: {self.issuing_country})"
 
 
@@ -56,11 +63,13 @@ class CryptoCurrency(Currency):
     """Криптовалюта с алгоритмом и последней известной капитализацией."""
 
     def __init__(self, name: str, code: str, algorithm: str, market_cap: float) -> None:
+        """Добавить к валюте алгоритм и неотрицательную капитализацию."""
         super().__init__(name, code)
         self.algorithm = _nonempty(algorithm, "algorithm")
         self.market_cap = validate_number(market_cap, name="market_cap")
 
     def get_display_info(self) -> str:
+        """Вернуть описание алгоритма и краткую капитализацию."""
         market_cap = f"{self.market_cap:.3g}".replace("e+", "e")
         return (
             f"[CRYPTO] {self.code} — {self.name} "
@@ -92,4 +101,5 @@ def get_currency(code: str) -> Currency:
 
 
 def get_supported_codes() -> tuple[str, ...]:
+    """Вернуть отсортированные коды всех валют реестра."""
     return tuple(sorted(_CURRENCIES))

@@ -28,6 +28,7 @@ class User:
         salt: str,
         registration_date: datetime,
     ) -> None:
+        """Восстановить пользователя из проверенных полей хранилища."""
         self._user_id = validate_user_id(user_id)
         self.username = username
         if not isinstance(hashed_password, str) or not hashed_password:
@@ -59,26 +60,32 @@ class User:
 
     @property
     def user_id(self) -> int:
+        """Вернуть идентификатор пользователя."""
         return self._user_id
 
     @property
     def username(self) -> str:
+        """Вернуть имя пользователя."""
         return self._username
 
     @username.setter
     def username(self, value: str) -> None:
+        """Проверить и установить имя пользователя."""
         self._username = validate_username(value)
 
     @property
     def hashed_password(self) -> str:
+        """Вернуть хеш пароля."""
         return self._hashed_password
 
     @property
     def salt(self) -> str:
+        """Вернуть индивидуальную соль."""
         return self._salt
 
     @property
     def registration_date(self) -> datetime:
+        """Вернуть дату регистрации."""
         return self._registration_date
 
     def get_user_info(self) -> dict:
@@ -112,6 +119,7 @@ class User:
 
     @classmethod
     def from_dict(cls, data: dict) -> User:
+        """Восстановить пользователя из JSON-полей и ISO-даты регистрации."""
         return cls(
             data["user_id"],
             data["username"],
@@ -125,11 +133,13 @@ class Wallet:
     """Кошелёк одной валюты с неотрицательным конечным балансом."""
 
     def __init__(self, currency_code: str, balance: float = 0.0) -> None:
+        """Создать кошелёк поддерживаемой валюты с проверенным балансом."""
         self._currency = get_currency(currency_code)
         self.balance = balance
 
     @property
     def currency_code(self) -> str:
+        """Вернуть код валюты кошелька."""
         return self._currency.code
 
     @property
@@ -139,10 +149,12 @@ class Wallet:
 
     @property
     def balance(self) -> float:
+        """Вернуть баланс кошелька."""
         return self._balance
 
     @balance.setter
     def balance(self, value: float) -> None:
+        """Проверить и установить баланс кошелька."""
         self._balance = validate_number(value, name="balance")
 
     def deposit(self, amount: float) -> None:
@@ -163,6 +175,7 @@ class Wallet:
         self.balance -= amount
 
     def get_balance_info(self) -> dict:
+        """Вернуть код валюты и баланс без изменения кошелька."""
         return {"currency_code": self.currency_code, "balance": self.balance}
 
 
@@ -176,6 +189,7 @@ class Portfolio:
         *,
         user: User | None = None,
     ) -> None:
+        """Создать портфель с копией словаря и необязательным объектом User."""
         self._user_id = validate_user_id(user_id)
         if user is not None and (not isinstance(user, User) or user.user_id != user_id):
             raise ValueError("Пользователь не соответствует владельцу портфеля")
@@ -193,10 +207,12 @@ class Portfolio:
 
     @property
     def user_id(self) -> int:
+        """Вернуть идентификатор пользователя."""
         return self._user_id
 
     @property
     def user(self) -> User | None:
+        """Вернуть переданный объект пользователя."""
         return self._user
 
     @property
@@ -205,6 +221,7 @@ class Portfolio:
         return self._wallets.copy()
 
     def add_currency(self, currency_code: str) -> Wallet:
+        """Создать пустой кошелёк; отклонить повторное добавление валюты."""
         code = get_currency(currency_code).code
         if code in self._wallets:
             raise ValueError(f"Кошелёк '{code}' уже существует")
@@ -213,6 +230,7 @@ class Portfolio:
         return wallet
 
     def get_wallet(self, currency_code: str) -> Wallet:
+        """Получить существующий кошелёк либо сообщить об его отсутствии."""
         code = get_currency(currency_code).code
         if code not in self._wallets:
             raise ValueError(
@@ -256,6 +274,7 @@ class Portfolio:
         return validate_number(sum(values), name="total_value")
 
     def to_dict(self) -> dict:
+        """Вернуть JSON-представление идентификатора и кошельков портфеля."""
         return {
             "user_id": self.user_id,
             "wallets": {

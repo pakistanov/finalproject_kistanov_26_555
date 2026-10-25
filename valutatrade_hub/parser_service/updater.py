@@ -19,6 +19,8 @@ from valutatrade_hub.parser_service.storage import ParserStorage
 
 @dataclass(frozen=True)
 class UpdateResult:
+    """Итог обновления: счётчики, время снимка и ошибки источников."""
+
     updated_count: int
     history_added: int
     last_refresh: str | None
@@ -26,6 +28,8 @@ class UpdateResult:
 
 
 class RatesUpdater:
+    """Координация клиентов API, объединения курсов и их сохранения."""
+
     def __init__(
         self,
         clients: list[BaseApiClient],
@@ -33,6 +37,7 @@ class RatesUpdater:
         *,
         logger: logging.Logger | None = None,
     ) -> None:
+        """Сохранить клиентов, хранилище и независимый логгер парсера."""
         self.clients = clients
         self.storage = storage
         self.logger = (
@@ -59,6 +64,7 @@ class RatesUpdater:
         )
 
     def run_update(self) -> UpdateResult:
+        """Опросить источники и сохранить успешные результаты и список ошибок."""
         self._log("UPDATE_START", sources=[client.source for client in self.clients])
         records, errors = [], {}
         for client in self.clients:
@@ -158,6 +164,7 @@ class RatesUpdater:
 def create_updater(
     source: str | None = None, database: DatabaseManager | None = None
 ) -> RatesUpdater:
+    """Собрать парсер для всех API либо одного выбранного источника."""
     config = ParserConfig.from_settings(database)
     factories = {"coingecko": CoinGeckoClient, "exchangerate": ExchangeRateApiClient}
     selected = factories if source is None else {source: factories.get(source)}

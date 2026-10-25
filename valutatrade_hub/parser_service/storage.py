@@ -18,15 +18,20 @@ from valutatrade_hub.parser_service.config import ParserConfig
 
 @dataclass(frozen=True)
 class SaveResult:
+    """Количество изменённых пар и новых измерений после сохранения."""
+
     updated_count: int
     history_added: int
     last_refresh: str | None
 
 
 class ParserStorage:
+    """Атомарная запись истории измерений и последнего снимка курсов."""
+
     def __init__(
         self, config: ParserConfig, database: DatabaseManager | None = None
     ) -> None:
+        """Подключить пути снимка и истории к блокировке хранилища."""
         self.config = config
         self._database = database if database is not None else DatabaseManager()
 

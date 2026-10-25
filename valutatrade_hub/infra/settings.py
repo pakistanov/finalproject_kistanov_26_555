@@ -35,6 +35,7 @@ class SettingsLoader:
     _instance_lock = RLock()
 
     def __new__(cls, config_path: str | Path | None = None):
+        """Вернуть единственный экземпляр класса под блокировкой."""
         with cls._instance_lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
@@ -42,6 +43,7 @@ class SettingsLoader:
             return cls._instance
 
     def __init__(self, config_path: str | Path | None = None) -> None:
+        """Один раз загрузить конфигурацию из pyproject.toml."""
         with self._instance_lock:
             path = Path(config_path or Path.cwd() / "pyproject.toml").resolve()
             if self._initialized:
@@ -55,6 +57,7 @@ class SettingsLoader:
             self._initialized = True
 
     def get(self, key: str, default: Any = None) -> Any:
+        """Вернуть значение настройки либо переданное значение по умолчанию."""
         with self._instance_lock:
             return self._values.get(key, default)
 

@@ -1,32 +1,38 @@
 # finalproject_kistanov_26_555
 
-Консольное приложение для управления виртуальным валютным портфелем:
-регистрация, вход, покупка и продажа валют, просмотр балансов и курсов.
-
-**Технологии:** Python 3.14, uv, requests, PrettyTable, Ruff. Данные хранятся в JSON.
+ValutaTrade Hub — консольное приложение для виртуального валютного портфеля:
+регистрация, вход, покупка и продажа валют, оценка портфеля и просмотр курсов.
+Python 3.14, uv, PrettyTable, requests, Ruff; хранение данных в JSON.
 
 ## Установка и запуск
 
 ```powershell
+git clone https://github.com/pakistanov/finalproject_kistanov_26_555.git
+cd finalproject_kistanov_26_555
 uv sync --locked
 uv run finalproject_kistanov_26_555
 ```
 
+Перед обновлением курсов скопируйте `.env.example` в `.env` в корне проекта
+и заполните ключи [ExchangeRate-API](https://www.exchangerate-api.com/)
+и [CoinGecko Demo](https://www.coingecko.com/en/developers/dashboard).
+Файл читается автоматически; переменные окружения имеют приоритет.
+`.env` не попадает в Git и сборку.
+
 ## Команды
 
-После запуска введите команды в консоли приложения:
+В консоли приложения:
 
 ```text
+update-rates
 register --username alice --password 1234
 login --username alice --password 1234
-deposit --amount 10000
-update-rates
 buy --currency BTC --amount 0.05
 sell --currency BTC --amount 0.01
 show-portfolio
 show-portfolio --base EUR
 get-rate --from USD --to BTC
-show-rates --top 2
+show-rates --top 3
 show-rates --currency RUB
 show-rates --base EUR
 currencies
@@ -35,111 +41,82 @@ help
 exit
 ```
 
-Новый портфель пуст; `deposit` пополняет виртуальный USD-баланс.
-Покупка списывает USD, продажа начисляет USD. `amount` — количество валюты.
-Для торговли выполните `login` и последующие команды в одном сеансе.
-Пароль должен содержать не менее 4 символов. Справка по команде: `buy --help`.
+Выбрана упрощённая модель из задания: `buy` увеличивает баланс валюты,
+`sell` уменьшает его. USD используется для оценки, списания и зачисления USD
+не выполняются. `amount` — количество валюты; новый портфель пуст.
+Пароль — минимум 4 символа. Справка по аргументам: `buy --help`.
 
-## Сервис парсинга
+Сессия живёт до выхода из приложения. Повторный `login` заменяет пользователя;
+неудачный вход сбрасывает сессию. Торговля и просмотр портфеля требуют входа.
 
-Курсы загружаются из CoinGecko и ExchangeRate-API. Скопируйте `.env.example`
-в `.env` в корне проекта (если файла ещё нет) и укажите ключи:
+`update-rates --source coingecko` и `update-rates --source exchangerate`
+обновляют один источник. `show-rates --top N` выбирает N самых дорогих
+криптовалют по цене в USD, затем переводит значения в указанную базу.
 
-```dotenv
-EXCHANGERATE_API_KEY=ваш_ключ
-COINGECKO_API_KEY=ваш_Demo_ключ
-```
+## Данные, кэш и Parser Service
 
-Приложение читает `.env` автоматически; переменные окружения имеют приоритет.
-`.env` исключён из Git и сборки. Для сдачи используется `.env.example`;
-проверяющий заполняет свой `.env`. При необходимости ключ передаётся отдельно.
+В `data/`: `users.json` — пользователи с солью и хешем пароля,
+`portfolios.json` — кошельки, `rates.json` — текущие курсы,
+`exchange_rates.json` — история курсов. В репозитории файлы инициализированы пустыми.
 
-Ключи: [ExchangeRate-API](https://www.exchangerate-api.com/docs/standard-requests),
-[CoinGecko Demo](https://docs.coingecko.com/demo/reference/authentication).
-Для обновления одного источника: `update-rates --source coingecko`
-или `update-rates --source exchangerate`.
+Core использует локальный кэш. TTL по умолчанию — 300 секунд; при устаревании
+`get-rate` и торговые команды предлагают выполнить `update-rates`.
+`show-rates` показывает состояние свежести. При отказе одного API сохраняются
+данные остальных и предыдущие пары; при отказе всех кэш не перезаписывается.
 
-Периодическое обновление запускается отдельной командой; остановка — Ctrl+C:
+Настройки путей, TTL, базовой валюты, API и логов — в `[tool.valutatrade]`
+файла `pyproject.toml`. Действия записываются в `logs/actions.log`, обновления —
+в `logs/parser.log`; журналы JSON с ротацией. Во время `update-rates` краткий
+ход обновления выводится также в консоль. `log_verbose = true` добавляет балансы
+до и после сделки. Ключи API хранятся только в окружении или `.env`.
+
+Периодическое обновление (остановка — Ctrl+C):
 
 ```powershell
 uv run python -m valutatrade_hub.parser_service.scheduler --interval 300
 ```
 
-## Хранение данных
-
-Файлы создаются автоматически в `data/` и исключены из Git:
-
-- `users.json` — пользователи, хеши паролей и соли.
-- `portfolios.json` — портфели и балансы кошельков.
-- `rates.json` — кэш курсов со временем обновления.
-- `exchange_rates.json` — история измерений с уникальными идентификаторами.
-
-Core читает только локальный кэш. Срок свежести по умолчанию — 5 минут;
-устаревший курс требует `update-rates`. `show-rates` помечает устаревшие записи.
-Время записи — время получения ответа; время источника сохраняется в метаданных.
-
-## Настройки и логи
-
-Настройки находятся в `[tool.valutatrade]` файла `pyproject.toml`: каталог
-и имена JSON-файлов, `rates_ttl_seconds`, `default_base_currency` и параметры
-логирования. Параметры API и списки валют — в `parser_service/config.py`,
-переопределения — в `[tool.valutatrade]`. `SettingsLoader` и `DatabaseManager` — Singleton.
-
-Операции `buy`, `sell` и запросы курсов записываются в `logs/actions.log`
-в формате JSON. Уровень — `INFO`, ротация — 1 МБ и 3 резервных файла.
-`log_verbose = true` добавляет балансы до и после сделки; `log_level = "DEBUG"`
-включает отладочный уровень. Каталог логов исключён из Git.
-Обновления и ошибки API записываются отдельно в `logs/parser.log`.
-
-## Ошибки
-
-- `buy`, `sell`: при нехватке средств выводятся доступная и требуемая суммы.
-- `buy`, `sell`, `get-rate`: при неизвестной валюте выводится список кодов.
-- При сбое получения курса предлагается повторить запрос или проверить сеть.
-- Если один API недоступен, сохраняются результаты остальных источников.
-
-## Структура проекта
+## Структура
 
 ```text
 valutatrade_hub/
-├── logging_config.py   # настройка и ротация логов
-├── decorators.py       # log_action
-├── core/
-│   ├── currencies.py   # Currency, FiatCurrency, CryptoCurrency
-│   ├── exceptions.py   # пользовательские исключения
-│   ├── models.py       # User, Wallet, Portfolio
-│   ├── utils.py        # валидация данных
-│   ├── usecases.py     # бизнес-логика
-│   ├── storage.py      # работа с JSON
-│   └── rates.py        # получение курсов
-├── infra/
-│   ├── settings.py     # SettingsLoader
-│   └── database.py     # DatabaseManager
-├── parser_service/
-│   ├── config.py       # API и параметры обновления
-│   ├── api_clients.py  # клиенты CoinGecko и ExchangeRate-API
-│   ├── updater.py      # обновление курсов
-│   ├── storage.py      # история и снимок курсов
-│   └── scheduler.py    # периодический запуск
-└── cli/
-    └── interface.py    # командный интерфейс
-main.py                 # запуск приложения
-pyproject.toml          # настройки и зависимости
-uv.lock                 # версии зависимостей
+├── core/            # models.py, currencies.py, exceptions.py, usecases.py, utils.py
+├── infra/           # settings.py, database.py
+├── parser_service/  # config.py, api_clients.py, updater.py, storage.py, scheduler.py
+├── cli/             # interface.py
+├── decorators.py
+└── logging_config.py
+data/                # четыре JSON-файла
+demo/                # запись работы
+main.py              # точка входа
+pyproject.toml
+uv.lock
+Makefile
 ```
 
-## Проверка кода и сборка
+## Проверка и сборка
 
 ```powershell
 uv run ruff check .
 uv run ruff format --check .
-uv --no-cache build
+uv build
 ```
 
-Собранный пакет находится в `dist/`.
+Пакеты создаются в `dist/`. Установка wheel в отдельное окружение:
 
-## Gitflow
+```powershell
+uv venv .venv-install
+uv pip install --python .venv-install dist/finalproject_kistanov_26_555-0.1.0-py3-none-any.whl
+.venv-install/Scripts/finalproject_kistanov_26_555.exe
+```
 
-- `main` — стабильные выпуски; `develop` — разработка.
-- `feature/*` создаются от `develop` и сливаются в неё через `--no-ff`.
-- `release/*` — подготовка выпусков; `hotfix/*` — срочные исправления.
+При установленном GNU Make доступны `make install`, `make run`, `make lint`,
+`make format`, `make check`, `make build`, `make package-install`.
+Разработка ведётся по Gitflow: `feature/*` → `develop` → `release/*` → `main`.
+
+## Демонстрация
+
+Полный цикл команд, обновление курсов и обработка ошибок:
+[запись asciinema](demo/demo.cast) (`asciinema play demo/demo.cast`).
+
+![Демонстрация приложения](demo/demo.gif)

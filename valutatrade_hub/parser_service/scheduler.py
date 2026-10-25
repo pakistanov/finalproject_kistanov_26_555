@@ -11,6 +11,8 @@ from valutatrade_hub.parser_service.updater import RatesUpdater, create_updater
 
 
 class RatesScheduler:
+    """Периодический последовательный запуск обновлений с возможностью остановки."""
+
     def __init__(
         self,
         updater: RatesUpdater,
@@ -18,6 +20,7 @@ class RatesScheduler:
         *,
         stop_event: Event | None = None,
     ) -> None:
+        """Настроить интервал обновления и событие остановки."""
         self.updater = updater
         self.interval = validate_number(
             updater.storage.config.UPDATE_INTERVAL_SECONDS
@@ -29,9 +32,11 @@ class RatesScheduler:
         self._stop = stop_event if stop_event is not None else Event()
 
     def stop(self) -> None:
+        """Запросить остановку перед следующим циклом обновления."""
         self._stop.set()
 
     def run(self, *, max_cycles: int | None = None) -> int:
+        """Обновлять курсы с интервалом, продолжая работу после сбоев API."""
         if max_cycles is not None and (
             isinstance(max_cycles, bool)
             or not isinstance(max_cycles, int)
@@ -61,6 +66,7 @@ class RatesScheduler:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Обработать аргументы командной строки и запустить приложение."""
     parser = argparse.ArgumentParser(description="Периодическое обновление курсов")
     parser.add_argument("--interval", type=float, help="Интервал в секундах")
     parser.add_argument("--source", choices=("coingecko", "exchangerate"))

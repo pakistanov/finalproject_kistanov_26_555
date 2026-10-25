@@ -96,6 +96,7 @@ def parse_timestamp(value: str) -> datetime:
 
 
 def utc_timestamp(moment: datetime | None = None) -> str:
+    """Преобразовать дату в ISO 8601 UTC с суффиксом Z."""
     moment = datetime.now(UTC) if moment is None else moment
     return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
@@ -121,6 +122,7 @@ def _reject_json_constant(value: str) -> None:
 
 
 def read_json(path: Path, expected_type: type, *, default=None) -> list | dict:
+    """Прочитать JSON заданного типа; при отсутствии использовать default."""
     try:
         with path.open(encoding="utf-8") as source:
             data = json.load(source, parse_constant=_reject_json_constant)
@@ -136,6 +138,7 @@ def read_json(path: Path, expected_type: type, *, default=None) -> list | dict:
 
 
 def atomic_write_json(path: Path, data: list | dict) -> None:
+    """Записать JSON через временный файл с атомарной заменой назначения."""
     temporary_path = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,6 +191,8 @@ class RateQuote:
 
 @dataclass(frozen=True)
 class CachedRatesView:
+    """Курсы локального снимка и время его последнего обновления."""
+
     quotes: tuple[RateQuote, ...]
     last_refresh: str | None
 
@@ -202,6 +207,7 @@ class RateService:
         ttl_seconds: float | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """Подключить читатель кэша, часы и настройку TTL."""
         from valutatrade_hub.infra.database import DatabaseManager
         from valutatrade_hub.infra.settings import SettingsLoader
 
@@ -216,6 +222,7 @@ class RateService:
 
     @property
     def ttl_seconds(self) -> float:
+        """Вернуть срок свежести курсов в секундах."""
         return (
             self._settings.get("rates_ttl_seconds") if self._ttl is None else self._ttl
         )
@@ -279,6 +286,7 @@ class RateService:
 
     @database_transaction
     def get_rate(self, from_currency: str, to_currency: str) -> RateQuote:
+        """Получить свежий прямой, обратный или кросс-курс из локального кэша."""
         from valutatrade_hub.core.currencies import get_currency
 
         left, right = get_currency(from_currency).code, get_currency(to_currency).code
