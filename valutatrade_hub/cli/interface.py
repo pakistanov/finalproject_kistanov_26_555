@@ -13,11 +13,13 @@ from valutatrade_hub.core.exceptions import (
     ApiRequestError,
     CurrencyNotFoundError,
     InsufficientFundsError,
+    RateUnavailableError,
     StorageError,
 )
-from valutatrade_hub.core.rates import RateQuote
+from valutatrade_hub.core.rates import CachedRatesView, RateQuote
 from valutatrade_hub.core.usecases import PortfolioView, TradeResult, TradingService
 from valutatrade_hub.infra.database import DatabaseManager
+from valutatrade_hub.parser_service.updater import UpdateResult
 
 
 class CommandExit(Exception):
@@ -42,7 +44,7 @@ class CommandParser(argparse.ArgumentParser):
 def build_parser(*, global_options: bool = False) -> CommandParser:
     parser = CommandParser(
         prog="finalproject_kistanov_26_555",
-        description="Виртуальный валютный кошелёк с демонстрационными курсами",
+        description="Виртуальный валютный кошелёк с курсами из локального кэша",
     )
     if global_options:
         parser.add_argument(
@@ -78,6 +80,12 @@ def build_parser(*, global_options: bool = False) -> CommandParser:
     rate = commands.add_parser("get-rate", help="Получить курс валюты")
     rate.add_argument("--from", dest="from_currency", required=True)
     rate.add_argument("--to", dest="to_currency", required=True)
+    update = commands.add_parser("update-rates", help="Обновить курсы из внешних API")
+    update.add_argument("--source", choices=("coingecko", "exchangerate"))
+    cached = commands.add_parser("show-rates", help="Посмотреть локальный кэш курсов")
+    cached.add_argument("--currency")
+    cached.add_argument("--top", type=int)
+    cached.add_argument("--base")
     commands.add_parser("currencies", help="Список поддерживаемых валют")
     commands.add_parser("logout", help="Завершить текущую сессию")
     commands.add_parser("help", help="Показать справку")
@@ -101,14 +109,40 @@ def format_portfolio(view: PortfolioView) -> str:
     return f"{title}\n{table}\nИТОГО: {view.total_value:,.2f} {view.base_currency}"
 
 
-def format_source(source: str) -> str:
-    if "DemoStub" in source:
-        return f"{source} (фиксированные демонстрационные курсы)"
-    return source
+def format_cached_rates(view: CachedRatesView) -> str:
+    table = PrettyTable(["Пара", "Курс", "Обновлено", "Источник", "Состояние"])
+    for quote in view.quotes:
+        table.add_row(
+            [
+                f"{quote.from_currency}_{quote.to_currency}",
+                f"{quote.rate:.12g}",
+                quote.updated_at.isoformat(),
+                quote.source,
+                "устарел" if quote.is_stale else "актуален",
+            ]
+        )
+    result = f"Курсы из кэша (обновлено: {view.last_refresh or '—'}):\n{table}"
+    if any(quote.is_stale for quote in view.quotes):
+        result += "\nЕсть устаревшие курсы. Выполните 'update-rates'."
+    return result
+
+
+def format_update(result: UpdateResult) -> str:
+    status = (
+        "Обновление завершено с ошибками." if result.errors else "Обновление завершено."
+    )
+    message = (
+        f"{status} Обновлено курсов: {result.updated_count}. "
+        f"Последнее обновление: {result.last_refresh or '—'}"
+    )
+    if result.errors:
+        message += "\n" + "\n".join(result.errors.values())
+        message += "\nПодробности — в журнале парсера."
+    return message
 
 
 def format_error(error: Exception) -> str:
-    if isinstance(error, InsufficientFundsError):
+    if isinstance(error, (InsufficientFundsError, RateUnavailableError)):
         return str(error)
     if isinstance(error, CurrencyNotFoundError):
         return f"{error}. Поддерживаемые валюты: {', '.join(get_supported_codes())}"
@@ -122,7 +156,7 @@ def format_quote(quote: RateQuote) -> str:
         f"Курс {quote.from_currency}→{quote.to_currency}: {quote.rate:.12g} "
         f"(обновлено: {quote.updated_at.isoformat()})\n"
         f"Обратный курс {quote.to_currency}→{quote.from_currency}: "
-        f"{1 / quote.rate:.12g}\nИсточник: {format_source(quote.source)}"
+        f"{1 / quote.rate:.12g}\nИсточник: {quote.source}"
     )
 
 
@@ -138,7 +172,7 @@ def format_trade(trade: TradeResult) -> str:
         f"- USD: было {trade.previous_usd_balance:.12g} "
         f"→ стало {trade.usd_balance:.12g}\n"
         f"{value_label}: {trade.usd_value:,.2f} USD\n"
-        f"Источник: {format_source(trade.quote.source)}"
+        f"Источник: {trade.quote.source}"
     )
 
 
@@ -186,6 +220,16 @@ class WalletApplication:
                         arguments.from_currency, arguments.to_currency
                     )
                 )
+            case "update-rates":
+                message = format_update(self.service.update_rates(arguments.source))
+            case "show-rates":
+                message = format_cached_rates(
+                    self.service.show_rates(
+                        arguments.currency,
+                        top=arguments.top,
+                        base_currency=arguments.base,
+                    )
+                )
             case "currencies":
                 message = "\n".join(
                     currency.get_display_info()
@@ -217,7 +261,7 @@ class WalletApplication:
 
     def run(self) -> int:
         print(
-            "Валютный кошелёк. Курсы демонстрационные, средства виртуальные.\n"
+            "Валютный кошелёк. Средства виртуальные.\n"
             "Команды: help; справка по команде: buy --help; выход: exit.",
             file=self.output,
         )

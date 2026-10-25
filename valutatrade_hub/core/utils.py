@@ -1,17 +1,15 @@
-"""Общие проверки данных и демонстрационные курсы."""
+"""Валидация данных, работа с JSON и временем."""
 
+import json
 import math
+import os
 import re
+import tempfile
+from copy import deepcopy
 from datetime import UTC, datetime
+from pathlib import Path
 
-# Фиктивная цена одной единицы валюты в USD, а не рыночные котировки.
-DEFAULT_EXCHANGE_RATES = {
-    "USD": 1.0,
-    "EUR": 1.0786,
-    "BTC": 59337.21,
-    "RUB": 0.01016,
-    "ETH": 3720.0,
-}
+from valutatrade_hub.core.exceptions import StorageError
 
 
 def normalize_currency(currency_code: str) -> str:
@@ -69,3 +67,71 @@ def parse_timestamp(value: str) -> datetime:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
     return moment.astimezone(UTC)
+
+
+def utc_timestamp(moment: datetime | None = None) -> str:
+    moment = datetime.now(UTC) if moment is None else moment
+    return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def extract_rate_pairs(cache: dict) -> dict:
+    """Читать новый снимок и прежний плоский формат, исключая заглушки."""
+    pairs = cache.get("pairs", cache)
+    if not isinstance(pairs, dict):
+        raise StorageError(
+            "Некорректная структура rates.json: pairs должен быть словарём"
+        )
+    return {
+        pair: entry.copy()
+        for pair, entry in pairs.items()
+        if isinstance(entry, dict)
+        and "rate" in entry
+        and "DemoStub" not in str(entry.get("source", cache.get("source", "")))
+    }
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"Недопустимая JSON-константа: {value}")
+
+
+def read_json(path: Path, expected_type: type, *, default=None) -> list | dict:
+    try:
+        with path.open(encoding="utf-8") as source:
+            data = json.load(source, parse_constant=_reject_json_constant)
+    except FileNotFoundError as exc:
+        if default is not None:
+            return deepcopy(default)
+        raise StorageError(f"Не удалось прочитать {path.name}") from exc
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise StorageError(f"Не удалось прочитать {path.name}") from exc
+    if not isinstance(data, expected_type):
+        raise StorageError(f"Некорректная структура {path.name}")
+    return data
+
+
+def atomic_write_json(path: Path, data: list | dict) -> None:
+    temporary_path = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as target:
+            temporary_path = Path(target.name)
+            json.dump(data, target, ensure_ascii=False, indent=2, allow_nan=False)
+            target.write("\n")
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary_path, path)
+    except (OSError, TypeError, ValueError) as exc:
+        raise StorageError(f"Не удалось сохранить {path.name}") from exc
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
