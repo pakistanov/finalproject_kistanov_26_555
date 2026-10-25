@@ -36,3 +36,23 @@ class ApiRequestError(RuntimeError):
 
 class StorageError(RuntimeError):
     """Данные не удалось прочитать или сохранить."""
+
+
+class RateUnavailableError(ValueError):
+    """В локальном кэше нет подходящего курса."""
+
+    def __init__(self, from_code: str, to_code: str) -> None:
+        super().__init__(
+            f"Курс {from_code}→{to_code} недоступен. Выполните 'update-rates'."
+        )
+
+
+class StaleRateError(RateUnavailableError):
+    """Кэш содержит курс, но его TTL истёк."""
+
+    def __init__(self, from_code: str, to_code: str, updated_at: str) -> None:
+        ValueError.__init__(
+            self,
+            f"Курс {from_code}→{to_code} устарел (обновлён: {updated_at}). "
+            "Выполните 'update-rates'.",
+        )

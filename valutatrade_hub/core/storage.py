@@ -1,13 +1,10 @@
 """JSON-хранилище с атомарной заменой отдельных файлов."""
 
-import json
-import os
-import tempfile
 from pathlib import Path
 
 from valutatrade_hub.core.exceptions import StorageError
 from valutatrade_hub.core.models import Portfolio, User, Wallet
-from valutatrade_hub.core.utils import validate_user_id
+from valutatrade_hub.core.utils import atomic_write_json, read_json, validate_user_id
 
 
 class JsonStorage:
@@ -23,53 +20,20 @@ class JsonStorage:
             for filename, default in (
                 ("users.json", []),
                 ("portfolios.json", []),
-                ("rates.json", {"source": "DemoStub", "last_refresh": None}),
             ):
                 if not self._path(filename).exists():
                     self._write(filename, default)
         except OSError as exc:
             raise StorageError("Не удалось создать каталог данных") from exc
 
-    @staticmethod
-    def _reject_constant(value: str) -> None:
-        raise ValueError(f"Недопустимая JSON-константа: {value}")
-
     def _path(self, filename: str) -> Path:
         return self.data_dir / self._filenames.get(filename, filename)
 
     def _read(self, filename: str, expected_type: type) -> list | dict:
-        path = self._path(filename)
-        try:
-            with path.open(encoding="utf-8") as source:
-                data = json.load(source, parse_constant=self._reject_constant)
-        except (OSError, UnicodeError, ValueError) as exc:
-            raise StorageError(f"Не удалось прочитать {filename}") from exc
-        if not isinstance(data, expected_type):
-            raise StorageError(f"Некорректная структура {filename}")
-        return data
+        return read_json(self._path(filename), expected_type)
 
     def _write(self, filename: str, data: list | dict) -> None:
-        temporary_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=self.data_dir,
-                prefix=f".{filename}.",
-                suffix=".tmp",
-                delete=False,
-            ) as target:
-                temporary_path = Path(target.name)
-                json.dump(data, target, ensure_ascii=False, indent=2, allow_nan=False)
-                target.write("\n")
-                target.flush()
-                os.fsync(target.fileno())
-            os.replace(temporary_path, self._path(filename))
-        except (OSError, TypeError, ValueError) as exc:
-            raise StorageError(f"Не удалось сохранить {filename}") from exc
-        finally:
-            if temporary_path is not None and temporary_path.exists():
-                temporary_path.unlink(missing_ok=True)
+        atomic_write_json(self._path(filename), data)
 
     def load_users(self) -> list[User]:
         data = self._read("users.json", list)
@@ -143,7 +107,9 @@ class JsonStorage:
         raise StorageError("Портфель пользователя не найден в portfolios.json")
 
     def load_rates(self) -> dict:
-        return self._read("rates.json", dict)
+        return read_json(
+            self._path("rates.json"), dict, default={"pairs": {}, "last_refresh": None}
+        )
 
     def save_rates(self, rates: dict) -> None:
         self._write("rates.json", rates)

@@ -8,7 +8,7 @@ from valutatrade_hub.core.exceptions import (
     InsufficientFundsError,
 )
 from valutatrade_hub.core.models import User
-from valutatrade_hub.core.rates import RateQuote, RateService
+from valutatrade_hub.core.rates import CachedRatesView, RateQuote, RateService
 from valutatrade_hub.core.utils import (
     validate_number,
     validate_password,
@@ -105,6 +105,22 @@ class TradingService:
     def get_rate(self, from_currency: str, to_currency: str) -> RateQuote:
         return self._rates.get_rate(from_currency, to_currency)
 
+    def show_rates(
+        self,
+        currency_code: str | None = None,
+        *,
+        top: int | None = None,
+        base_currency: str | None = None,
+    ) -> CachedRatesView:
+        return self._rates.get_cached_rates(
+            currency_code, top=top, base_currency=base_currency
+        )
+
+    def update_rates(self, source: str | None = None):
+        from valutatrade_hub.parser_service.updater import create_updater
+
+        return create_updater(source, self._storage).run_update()
+
     @database_transaction
     def show_portfolio(self, base_currency: str | None = None) -> PortfolioView:
         user = self._require_user()
@@ -113,8 +129,10 @@ class TradingService:
             if base_currency is None
             else base_currency
         ).code
-        base_quote = self.get_rate(base, "USD")
         portfolio = self._storage.load_portfolio(user)
+        if not portfolio.wallets:
+            return PortfolioView(user.username, base, (), 0.0)
+        base_quote = self.get_rate(base, "USD")
         usd_rates = {"USD": 1.0, base: base_quote.rate}
         wallets = portfolio.wallets
         for code, wallet in wallets.items():

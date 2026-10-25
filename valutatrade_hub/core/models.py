@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from valutatrade_hub.core.currencies import Currency, get_currency
 from valutatrade_hub.core.exceptions import InsufficientFundsError
 from valutatrade_hub.core.utils import (
-    DEFAULT_EXCHANGE_RATES,
     parse_timestamp,
     validate_number,
     validate_password,
@@ -228,7 +227,16 @@ class Portfolio:
     ) -> float:
         """Оценить портфель, используя цены одной единицы валюты в USD."""
         base = get_currency(base_currency).code
-        rates = DEFAULT_EXCHANGE_RATES if exchange_rates is None else exchange_rates
+        if exchange_rates is None:
+            from valutatrade_hub.core.rates import RateService
+
+            service = RateService()
+            codes = {base, "USD"} | {
+                code for code, wallet in self._wallets.items() if wallet.balance > 0
+            }
+            rates = {code: service.get_rate(code, "USD").rate for code in codes}
+        else:
+            rates = exchange_rates
         if base not in rates:
             raise ValueError(f"Неизвестная базовая валюта '{base}'")
         base_rate = validate_number(rates[base], name="rate", positive=True)

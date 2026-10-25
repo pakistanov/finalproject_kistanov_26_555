@@ -3,7 +3,7 @@
 Консольное приложение для управления виртуальным валютным портфелем:
 регистрация, вход, покупка и продажа валют, просмотр балансов и курсов.
 
-**Технологии:** Python 3.14, uv, PrettyTable, Ruff. Данные хранятся в JSON.
+**Технологии:** Python 3.14, uv, requests, PrettyTable, Ruff. Данные хранятся в JSON.
 
 ## Установка и запуск
 
@@ -20,11 +20,15 @@ uv run finalproject_kistanov_26_555
 register --username alice --password 1234
 login --username alice --password 1234
 deposit --amount 10000
+update-rates
 buy --currency BTC --amount 0.05
 sell --currency BTC --amount 0.01
 show-portfolio
 show-portfolio --base EUR
 get-rate --from USD --to BTC
+show-rates --top 2
+show-rates --currency RUB
+show-rates --base EUR
 currencies
 logout
 help
@@ -36,6 +40,27 @@ exit
 Для торговли выполните `login` и последующие команды в одном сеансе.
 Пароль должен содержать не менее 4 символов. Справка по команде: `buy --help`.
 
+## Сервис парсинга
+
+Курсы загружаются из CoinGecko и ExchangeRate-API. Ключи задаются в окружении
+PowerShell перед запуском приложения:
+
+```powershell
+$env:EXCHANGERATE_API_KEY = "ваш_ключ"
+$env:COINGECKO_API_KEY = "ваш_Demo_ключ"
+```
+
+Ключи: [ExchangeRate-API](https://www.exchangerate-api.com/docs/standard-requests),
+[CoinGecko Demo](https://docs.coingecko.com/demo/reference/authentication).
+Для обновления одного источника: `update-rates --source coingecko`
+или `update-rates --source exchangerate`.
+
+Периодическое обновление запускается отдельной командой; остановка — Ctrl+C:
+
+```powershell
+uv run python -m valutatrade_hub.parser_service.scheduler --interval 300
+```
+
 ## Хранение данных
 
 Файлы создаются автоматически в `data/` и исключены из Git:
@@ -43,25 +68,31 @@ exit
 - `users.json` — пользователи, хеши паролей и соли.
 - `portfolios.json` — портфели и балансы кошельков.
 - `rates.json` — кэш курсов со временем обновления.
+- `exchange_rates.json` — история измерений с уникальными идентификаторами.
 
-Используются фиксированные курсы; срок свежести кэша по умолчанию — 5 минут.
+Core читает только локальный кэш. Срок свежести по умолчанию — 5 минут;
+устаревший курс требует `update-rates`. `show-rates` помечает устаревшие записи.
+Время записи — время получения ответа; время источника сохраняется в метаданных.
 
 ## Настройки и логи
 
 Настройки находятся в `[tool.valutatrade]` файла `pyproject.toml`: каталог
 и имена JSON-файлов, `rates_ttl_seconds`, `default_base_currency` и параметры
-логирования. `SettingsLoader` и `DatabaseManager` реализованы как Singleton.
+логирования. Параметры API и списки валют — в `parser_service/config.py`,
+переопределения — в `[tool.valutatrade]`. `SettingsLoader` и `DatabaseManager` — Singleton.
 
 Операции `buy`, `sell` и запросы курсов записываются в `logs/actions.log`
 в формате JSON. Уровень — `INFO`, ротация — 1 МБ и 3 резервных файла.
 `log_verbose = true` добавляет балансы до и после сделки; `log_level = "DEBUG"`
 включает отладочный уровень. Каталог логов исключён из Git.
+Обновления и ошибки API записываются отдельно в `logs/parser.log`.
 
 ## Ошибки
 
 - `buy`, `sell`: при нехватке средств выводятся доступная и требуемая суммы.
 - `buy`, `sell`, `get-rate`: при неизвестной валюте выводится список кодов.
 - При сбое получения курса предлагается повторить запрос или проверить сеть.
+- Если один API недоступен, сохраняются результаты остальных источников.
 
 ## Структура проекта
 
@@ -80,6 +111,12 @@ valutatrade_hub/
 ├── infra/
 │   ├── settings.py     # SettingsLoader
 │   └── database.py     # DatabaseManager
+├── parser_service/
+│   ├── config.py       # API и параметры обновления
+│   ├── api_clients.py  # клиенты CoinGecko и ExchangeRate-API
+│   ├── updater.py      # обновление курсов
+│   ├── storage.py      # история и снимок курсов
+│   └── scheduler.py    # периодический запуск
 └── cli/
     └── interface.py    # командный интерфейс
 main.py                 # запуск приложения

@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from threading import RLock
 
 from valutatrade_hub.core.exceptions import StorageError
@@ -23,12 +24,18 @@ class ActionJsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, allow_nan=False)
 
 
-def configure_logging(settings: SettingsLoader | None = None) -> logging.Logger:
+def configure_logging(
+    settings: SettingsLoader | None = None,
+    *,
+    name: str = LOGGER_NAME,
+    file_path: Path | None = None,
+) -> logging.Logger:
     """Повторная настройка не добавляет дублирующиеся обработчики."""
     settings = settings if settings is not None else SettingsLoader()
-    path = settings.get("log_dir") / settings.get("log_file")
+    path = file_path or settings.get("log_dir") / settings.get("log_file")
+    path = path.resolve()
     with _configuration_lock:
-        logger = logging.getLogger(LOGGER_NAME)
+        logger = logging.getLogger(name)
         logger.setLevel(settings.get("log_level"))
         logger.propagate = False
         matching_handler = None

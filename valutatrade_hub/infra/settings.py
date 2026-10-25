@@ -14,10 +14,12 @@ DEFAULT_SETTINGS = {
     "users_file": "users.json",
     "portfolios_file": "portfolios.json",
     "rates_file": "rates.json",
+    "history_file": "exchange_rates.json",
     "rates_ttl_seconds": 300,
     "default_base_currency": "USD",
     "log_dir": "logs",
     "log_file": "actions.log",
+    "parser_log_file": "parser.log",
     "log_format": "json",
     "log_level": "INFO",
     "log_max_bytes": 1048576,
@@ -93,7 +95,8 @@ class SettingsLoader:
             if not path.is_absolute():
                 path = self._config_path.parent / path
             values[key] = path.resolve()
-        for key in ("users_file", "portfolios_file", "rates_file", "log_file"):
+        json_keys = ("users_file", "portfolios_file", "rates_file", "history_file")
+        for key in (*json_keys, "log_file", "parser_log_file"):
             filename = values[key]
             if (
                 not isinstance(filename, str)
@@ -102,17 +105,18 @@ class SettingsLoader:
                 or filename in (".", "..")
             ):
                 raise ValueError(f"'{key}' должен содержать только имя файла")
-        filenames = {
-            values[key].casefold()
-            for key in ("users_file", "portfolios_file", "rates_file")
-        }
-        if len(filenames) != 3:
+        filenames = {values[key].casefold() for key in json_keys}
+        if len(filenames) != len(json_keys):
             raise ValueError("Имена JSON-файлов должны различаться")
-        if (
-            str(values["log_dir"]).casefold() == str(values["data_dir"]).casefold()
-            and values["log_file"].casefold() in filenames
+        if str(values["log_dir"]).casefold() == str(
+            values["data_dir"]
+        ).casefold() and any(
+            values[key].casefold() in filenames
+            for key in ("log_file", "parser_log_file")
         ):
             raise ValueError("Журнал операций не должен совпадать с JSON-хранилищем")
+        if values["log_file"].casefold() == values["parser_log_file"].casefold():
+            raise ValueError("Журналы Core и Parser должны различаться")
         for key in ("log_max_bytes", "log_backup_count"):
             if isinstance(values[key], bool) or not isinstance(values[key], int):
                 raise ValueError(f"'{key}' должен быть положительным целым числом")
