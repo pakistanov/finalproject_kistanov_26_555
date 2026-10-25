@@ -14,9 +14,12 @@ from valutatrade_hub.parser_service.config import ParserConfig
 
 
 class BaseApiClient(ABC):
+    """Общий контракт HTTP-клиентов и безопасная обработка ответов API."""
+
     source = "API"
 
     def __init__(self, config: ParserConfig, session=None) -> None:
+        """Сохранить конфигурацию и HTTP-клиент для запросов."""
         self.config = config
         self._http = session if session is not None else requests
         self.last_metadata: dict[str, dict] = {}
@@ -92,9 +95,12 @@ class BaseApiClient(ABC):
 
 
 class CoinGeckoClient(BaseApiClient):
+    """Получение криптовалют по CoinGecko ID в выбранной фиатной базе."""
+
     source = "CoinGecko"
 
     def fetch_rates(self) -> dict[str, float]:
+        """Получить цены настроенных криптовалют и метаданные HTTP-ответа."""
         self.last_metadata = {}
         codes = self.config.CRYPTO_CURRENCIES
         if not codes:
@@ -141,9 +147,12 @@ class CoinGeckoClient(BaseApiClient):
 
 
 class ExchangeRateApiClient(BaseApiClient):
+    """Получение фиатных курсов с преобразованием направления пары."""
+
     source = "ExchangeRate-API"
 
     def fetch_rates(self) -> dict[str, float]:
+        """Получить фиатные пары к базе, инвертировав курсы ответа API."""
         self.last_metadata = {}
         base = self.config.BASE_CURRENCY
         codes = set(self.config.FIAT_CURRENCIES) - {base}

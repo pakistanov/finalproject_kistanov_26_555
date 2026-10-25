@@ -59,6 +59,7 @@ class TradingService:
     def __init__(
         self, storage: DatabaseManager | None = None, rates: RateService | None = None
     ) -> None:
+        """Подключить хранилище, курсы и логгер без хранения сессии."""
         self._settings = SettingsLoader()
         self._storage = storage if storage is not None else DatabaseManager()
         self._logger = configure_logging(self._settings)

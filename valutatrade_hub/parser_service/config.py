@@ -37,6 +37,8 @@ def _get_api_key(name: str) -> str | None:
 
 @dataclass
 class ParserConfig:
+    """Параметры API и файлов; секретные ключи исключены из repr."""
+
     EXCHANGERATE_API_KEY: str | None = field(
         default_factory=lambda: _get_api_key("EXCHANGERATE_API_KEY"), repr=False
     )
@@ -56,6 +58,7 @@ class ParserConfig:
     UPDATE_INTERVAL_SECONDS: float = 300
 
     def __post_init__(self) -> None:
+        """Проверить валюты, URL, числовые параметры и уникальность путей."""
         base = get_currency(self.BASE_CURRENCY)
         if not isinstance(base, FiatCurrency):
             raise ValueError("Базовая валюта парсера должна быть фиатной")
@@ -117,6 +120,7 @@ class ParserConfig:
 
     @classmethod
     def from_settings(cls, database: DatabaseManager | None = None) -> ParserConfig:
+        """Собрать настройки из Singleton и ключи из окружения или .env."""
         settings = SettingsLoader()
         database = database if database is not None else DatabaseManager()
         return cls(

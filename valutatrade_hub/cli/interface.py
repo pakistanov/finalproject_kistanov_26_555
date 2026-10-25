@@ -29,6 +29,7 @@ class CommandExit(Exception):
     """Справка не должна завершать интерактивный сеанс."""
 
     def __init__(self, status: int = 0, message: str | None = None) -> None:
+        """Сохранить код завершения и сообщение результата разбора."""
         super().__init__(message)
         self.status = status
         self.message = message
@@ -38,13 +39,16 @@ class CommandParser(argparse.ArgumentParser):
     """Ошибки синтаксиса команд обрабатывает интерфейс, а не sys.exit."""
 
     def exit(self, status: int = 0, message: str | None = None) -> None:
+        """Завершить разбор без остановки интерактивного процесса."""
         raise CommandExit(status, message)
 
     def error(self, message: str) -> None:
+        """Передать ошибку синтаксиса обработчику команд."""
         raise CommandExit(2, message)
 
 
 def build_parser(*, global_options: bool = False) -> CommandParser:
+    """Создать парсер команд оболочки и необязательных глобальных аргументов."""
     parser = CommandParser(
         prog="finalproject_kistanov_26_555",
         description="Виртуальный валютный кошелёк с курсами из локального кэша",
@@ -97,6 +101,7 @@ def build_parser(*, global_options: bool = False) -> CommandParser:
 
 
 def format_portfolio(view: PortfolioView) -> str:
+    """Сформировать таблицу балансов и итоговую стоимость портфеля."""
     title = f"Портфель пользователя '{view.username}' (база: {view.base_currency})"
     if not view.wallets:
         return f"{title}\nПортфель пуст. Добавьте валюту командой buy."
@@ -112,6 +117,7 @@ def format_portfolio(view: PortfolioView) -> str:
 
 
 def format_cached_rates(view: CachedRatesView) -> str:
+    """Сформировать таблицу курсов с источниками и состоянием TTL."""
     table = PrettyTable(["Пара", "Курс", "Обновлено", "Источник", "Состояние"])
     for quote in view.quotes:
         table.add_row(
@@ -130,6 +136,7 @@ def format_cached_rates(view: CachedRatesView) -> str:
 
 
 def format_update(result: UpdateResult) -> str:
+    """Сформировать итог обновления, включая ошибки отдельных источников."""
     status = (
         "Обновление завершено с ошибками." if result.errors else "Обновление завершено."
     )
@@ -144,6 +151,7 @@ def format_update(result: UpdateResult) -> str:
 
 
 def format_error(error: Exception) -> str:
+    """Преобразовать ожидаемое исключение в пользовательское сообщение."""
     if isinstance(error, (InsufficientFundsError, RateUnavailableError)):
         return str(error)
     if isinstance(error, CurrencyNotFoundError):
@@ -154,6 +162,7 @@ def format_error(error: Exception) -> str:
 
 
 def format_quote(quote: RateQuote) -> str:
+    """Показать прямой и обратный курсы, округляя только при выводе."""
     return (
         f"Курс {quote.from_currency}→{quote.to_currency}: {quote.rate:.12g} "
         f"(обновлено: {quote.updated_at.isoformat()})\n"
@@ -163,6 +172,7 @@ def format_quote(quote: RateQuote) -> str:
 
 
 def format_trade(trade: TradeResult) -> str:
+    """Показать изменение кошелька и оценочную стоимость операции в USD."""
     action = "Покупка" if trade.side == "buy" else "Продажа"
     value_label = "Оценочная стоимость" if trade.side == "buy" else "Оценочная выручка"
     return (
@@ -180,6 +190,7 @@ class WalletApplication:
     """Одна интерактивная сессия, живущая до exit или конца ввода."""
 
     def __init__(self, service: TradingService, output: TextIO | None = None) -> None:
+        """Создать оболочку с независимой сессией и потоком вывода."""
         self.service = service
         self.parser = build_parser()
         self.output = output
@@ -283,6 +294,7 @@ class WalletApplication:
         return True
 
     def run(self) -> int:
+        """Выполнять команды до exit, EOF или прерывания с клавиатуры."""
         print(
             "Валютный кошелёк. Средства виртуальные.\n"
             "Команды: help; справка по команде: buy --help; выход: exit.",
@@ -299,7 +311,7 @@ class WalletApplication:
         return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def run(argv: list[str] | None = None) -> int:
     """Запустить одну команду или интерактивную оболочку без аргументов."""
     parser = build_parser(global_options=True)
     try:

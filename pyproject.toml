@@ -11,16 +11,20 @@ dependencies = [
 ]
 
 [project.scripts]
-finalproject_kistanov_26_555 = "valutatrade_hub.cli.interface:main"
+finalproject_kistanov_26_555 = "main:main"
 
 [build-system]
-requires = ["uv_build>=0.13.0,<0.14.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
 
-[tool.uv.build-backend]
-module-name = "valutatrade_hub"
-module-root = ""
-source-include = ["main.py", "data/README.md", "uv.lock", ".env.example"]
+[tool.hatch.build.targets.wheel]
+only-include = ["valutatrade_hub", "main.py"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/valutatrade_hub", "/main.py", "/pyproject.toml", "/uv.lock",
+           "/uv.toml", "/.python-version", "/Makefile", "/README.md",
+           "/.env.example", "/data/*.json", "/demo/*.cast", "/demo/*.gif"]
+exclude = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
 target-version = "py314"
@@ -28,7 +32,7 @@ line-length = 88
 extend-exclude = [".uv-cache", ".venv-install"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "D100", "D101", "D102", "D103", "D104", "D105", "D107"]
 
 [tool.ruff.format]
 quote-style = "double"
