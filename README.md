@@ -211,18 +211,34 @@ FinalProject/
 
 ## Работа с Git
 
-Основная ветка репозитория — `main`.
-Для разработки используйте GitHub Flow: отдельная ветка на задачу,
-проверки качества перед коммитом, затем слияние в `main`.
+Разработка ведётся по Gitflow:
+
+- `main` — стабильные выпуски.
+- `develop` — интеграция завершённых задач и основа для следующего выпуска.
+- `feature/*` — отдельные задачи; создаются от `develop` и сливаются в неё
+  после проверок через `--no-ff`, чтобы история сохраняла границы задач.
+- `release/*` — подготовка выпуска; создаются от `develop`, после проверки
+  сливаются в `main` и `develop`. Выпуск в `main` отмечается тегом версии.
+- `hotfix/*` — срочные исправления выпущенной версии; создаются от `main`
+  и после проверки сливаются в `main` и `develop`.
+
+Новые функции не коммитятся непосредственно в `main` или `develop`.
+Ветки `release/*` и `hotfix/*` создаются по необходимости.
+Пример работы над следующей задачей:
 
 ```powershell
-git switch -c feature/next-task
+git switch develop
+git switch -c feature/next-task develop
 uv run ruff check .
 uv run ruff format --check .
 uv run python -m unittest discover -s tests
 git add .
 git commit -m "feat: describe completed task"
+git switch develop
+git merge --no-ff feature/next-task -m "Merge feature/next-task into develop"
 ```
 
 Фиксируйте завершённые задачи небольшими осмысленными коммитами.
 `uv.lock` хранится в репозитории для воспроизводимой установки зависимостей.
+История до перехода на Gitflow сохранена: `feature/core-cli` была слита
+в `main` через fast-forward, затем от этого состояния создана `develop`.
