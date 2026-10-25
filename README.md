@@ -66,7 +66,7 @@ exit
 ## Структура проекта
 
 ```text
-src/valutatrade_hub/
+valutatrade_hub/
 ├── logging_config.py   # настройка и ротация логов
 ├── decorators.py       # log_action
 ├── core/

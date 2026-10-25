@@ -16,7 +16,8 @@ requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = ["finalproject_kistanov_26_555", "valutatrade_hub"]
+module-name = "valutatrade_hub"
+module-root = ""
 source-include = ["main.py", "data/README.md", "uv.lock"]
 
 [tool.ruff]
