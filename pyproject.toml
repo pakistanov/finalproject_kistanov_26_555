@@ -23,7 +23,7 @@ only-include = ["valutatrade_hub", "main.py"]
 [tool.hatch.build.targets.sdist]
 include = ["/valutatrade_hub", "/main.py", "/pyproject.toml", "/uv.lock",
            "/uv.toml", "/.python-version", "/Makefile", "/README.md",
-           "/.env.example", "/data/*.json", "/demo/*.cast", "/demo/*.gif"]
+           "/.gitignore", "/.env.example", "/data/*.json", "/demo/*.cast", "/demo/*.gif"]
 exclude = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
