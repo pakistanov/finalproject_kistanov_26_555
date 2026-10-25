@@ -17,7 +17,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-name = ["finalproject_kistanov_26_555", "valutatrade_hub"]
-source-include = ["main.py", "tests/**", "data/README.md", "uv.lock"]
+source-include = ["main.py", "data/README.md", "uv.lock"]
 
 [tool.ruff]
 target-version = "py314"
