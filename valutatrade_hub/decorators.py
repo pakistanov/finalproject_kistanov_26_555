@@ -4,6 +4,7 @@ import inspect
 import math
 from functools import wraps
 
+from valutatrade_hub.core.exceptions import StorageError
 from valutatrade_hub.infra.settings import SettingsLoader
 
 
@@ -25,12 +26,18 @@ def log_action(action: str, *, verbose: bool | None = None):
         @wraps(method)
         def wrapped(self, *args, **kwargs):
             arguments = signature.bind(self, *args, **kwargs).arguments
-            user = self.current_user
+            user_id = arguments.get("user_id")
+            username = None
+            if user_id is not None:
+                try:
+                    username = self.get_user(user_id).username
+                except ValueError, StorageError:
+                    pass
             currency = arguments.get("currency_code", arguments.get("from_currency"))
             event = {
                 "action": action.upper(),
-                "username": user.username if user else None,
-                "user_id": user.user_id if user else None,
+                "username": username,
+                "user_id": _log_value(user_id),
                 "currency_code": (
                     currency.strip().upper() if isinstance(currency, str) else None
                 ),
@@ -57,10 +64,6 @@ def log_action(action: str, *, verbose: bool | None = None):
                 event["wallet"] = {
                     "before": result.previous_balance,
                     "after": result.balance,
-                }
-                event["usd_wallet"] = {
-                    "before": result.previous_usd_balance,
-                    "after": result.usd_balance,
                 }
             self._logger.info("action", extra={"action_data": event})
             return result

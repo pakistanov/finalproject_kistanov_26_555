@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from valutatrade_hub.core.currencies import Currency, get_currency
 from valutatrade_hub.core.exceptions import InsufficientFundsError
 from valutatrade_hub.core.utils import (
+    EXCHANGE_RATES,
     parse_timestamp,
     validate_number,
     validate_password,
@@ -173,10 +174,10 @@ class Portfolio:
         user_id: int,
         wallets: dict[str, Wallet] | None = None,
         *,
-        user: User,
+        user: User | None = None,
     ) -> None:
         self._user_id = validate_user_id(user_id)
-        if not isinstance(user, User) or user.user_id != user_id:
+        if user is not None and (not isinstance(user, User) or user.user_id != user_id):
             raise ValueError("Пользователь не соответствует владельцу портфеля")
         self._user = user
         if wallets is not None and not isinstance(wallets, dict):
@@ -195,7 +196,7 @@ class Portfolio:
         return self._user_id
 
     @property
-    def user(self) -> User:
+    def user(self) -> User | None:
         return self._user
 
     @property
@@ -223,31 +224,35 @@ class Portfolio:
     def get_total_value(
         self,
         base_currency: str = "USD",
-        exchange_rates: dict[str, float] | None = None,
+        rates: dict | None = None,
     ) -> float:
-        """Оценить портфель, используя цены одной единицы валюты в USD."""
-        base = get_currency(base_currency).code
-        if exchange_rates is None:
-            from valutatrade_hub.core.rates import RateService
+        """Конвертировать через USD по переданным курсам или учебной заглушке.
 
-            service = RateService()
-            codes = {base, "USD"} | {
-                code for code, wallet in self._wallets.items() if wallet.balance > 0
-            }
-            rates = {code: service.get_rate(code, "USD").rate for code in codes}
-        else:
-            rates = exchange_rates
-        if base not in rates:
-            raise ValueError(f"Неизвестная базовая валюта '{base}'")
-        base_rate = validate_number(rates[base], name="rate", positive=True)
-        values = []
-        for code, wallet in self._wallets.items():
-            if wallet.balance == 0:
-                continue
-            if code not in rates:
-                raise ValueError(f"Не удалось получить курс для {code}→{base}")
-            rate = validate_number(rates[code], name="rate", positive=True)
-            values.append(wallet.balance * (rate / base_rate))
+        rates принимает цены по кодам (BTC) либо пары X_USD с числами
+        или объектами {"rate": ...}. Модель не читает файлы и не вызывает API.
+        """
+        base = get_currency(base_currency).code
+        if rates is not None and not isinstance(rates, dict):
+            raise ValueError("Курсы должны быть словарём")
+        prices = EXCHANGE_RATES if rates is None else rates.get("pairs", rates)
+        if not isinstance(prices, dict):
+            raise ValueError("Курсы должны быть словарём")
+
+        def usd_rate(code: str) -> float:
+            if code == "USD":
+                return 1.0
+            value = prices.get(code, prices.get(f"{code}_USD"))
+            if isinstance(value, dict):
+                value = value.get("rate")
+            if value is None:
+                raise ValueError(f"Не удалось получить курс для {code}→USD")
+            return validate_number(value, name="rate", positive=True)
+
+        base_rate = usd_rate(base)
+        values = [
+            wallet.balance * (usd_rate(code) / base_rate)
+            for code, wallet in self._wallets.items()
+        ]
         return validate_number(sum(values), name="total_value")
 
     def to_dict(self) -> dict:

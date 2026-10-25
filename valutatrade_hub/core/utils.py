@@ -1,15 +1,41 @@
 """Валидация данных, работа с JSON и временем."""
 
+from __future__ import annotations
+
 import json
 import math
 import os
 import re
 import tempfile
+from collections import deque
+from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from valutatrade_hub.core.exceptions import StorageError
+from valutatrade_hub.core.exceptions import (
+    RateUnavailableError,
+    StaleRateError,
+    StorageError,
+)
+
+if TYPE_CHECKING:
+    from valutatrade_hub.infra.database import DatabaseManager
+
+# Заглушка только для самостоятельного использования модели Portfolio.
+# Рабочие usecases всегда передают курсы из кэша.
+EXCHANGE_RATES = {
+    "USD": 1.0,
+    "EUR": 1.0786,
+    "GBP": 1.25,
+    "RUB": 0.01016,
+    "BTC": 59337.21,
+    "ETH": 3720.0,
+    "SOL": 145.12,
+}
 
 
 def normalize_currency(currency_code: str) -> str:
@@ -135,3 +161,199 @@ def atomic_write_json(path: Path, data: list | dict) -> None:
                 temporary_path.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+def database_transaction(method):
+    """Удерживать блокировку менеджера до завершения сценария."""
+
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._storage.transaction():
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
+@dataclass(frozen=True)
+class RateQuote:
+    """Цена одной единицы from_currency в единицах to_currency."""
+
+    from_currency: str
+    to_currency: str
+    rate: float
+    updated_at: datetime
+    source: str
+    is_stale: bool = False
+
+
+@dataclass(frozen=True)
+class CachedRatesView:
+    quotes: tuple[RateQuote, ...]
+    last_refresh: str | None
+
+
+class RateService:
+    """Core не обращается к API: обновлением занимается Parser Service."""
+
+    def __init__(
+        self,
+        storage: DatabaseManager | None = None,
+        *,
+        ttl_seconds: float | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        from valutatrade_hub.infra.database import DatabaseManager
+        from valutatrade_hub.infra.settings import SettingsLoader
+
+        self._settings = SettingsLoader()
+        self._storage = storage if storage is not None else DatabaseManager()
+        self._ttl = (
+            None
+            if ttl_seconds is None
+            else validate_number(ttl_seconds, name="ttl_seconds", positive=True)
+        )
+        self._clock = clock if clock is not None else lambda: datetime.now(UTC)
+
+    @property
+    def ttl_seconds(self) -> float:
+        return (
+            self._settings.get("rates_ttl_seconds") if self._ttl is None else self._ttl
+        )
+
+    def _graph(self, cache: dict, now: datetime, *, allow_stale: bool) -> dict:
+        from valutatrade_hub.core.currencies import get_currency
+
+        graph: dict[str, dict[str, RateQuote]] = {}
+        for pair, entry in extract_rate_pairs(cache).items():
+            try:
+                left, right = pair.split("_")
+                left, right = get_currency(left).code, get_currency(right).code
+                if left == right:
+                    continue
+                rate = validate_number(entry["rate"], name="rate", positive=True)
+                inverse = validate_number(1 / rate, name="rate", positive=True)
+                updated = parse_timestamp(entry["updated_at"])
+                age = (now - updated).total_seconds()
+                if age < 0 or (not allow_stale and age >= self.ttl_seconds):
+                    continue
+                source = entry.get("source", cache.get("source", "Cache"))
+                if not isinstance(source, str) or not source.strip():
+                    continue
+            except KeyError, TypeError, ValueError, OverflowError:
+                continue
+            for origin, target, value in ((left, right, rate), (right, left, inverse)):
+                previous = graph.setdefault(origin, {}).get(target)
+                if previous is None or previous.updated_at < updated:
+                    graph[origin][target] = RateQuote(
+                        origin, target, value, updated, source
+                    )
+        return graph
+
+    @staticmethod
+    def _find(graph: dict, left: str, right: str, now: datetime) -> RateQuote | None:
+        if left == right:
+            return RateQuote(left, right, 1.0, now, "Identity")
+        queue = deque([(left, 1.0, now, frozenset())])
+        visited = {left}
+        while queue:
+            origin, accumulated, updated, sources = queue.popleft()
+            for target, edge in sorted(graph.get(origin, {}).items()):
+                if target in visited:
+                    continue
+                try:
+                    value = validate_number(
+                        accumulated * edge.rate, name="rate", positive=True
+                    )
+                    validate_number(1 / value, name="rate", positive=True)
+                except ValueError:
+                    continue
+                timestamp = min(updated, edge.updated_at)
+                combined = sources | {edge.source}
+                if target == right:
+                    return RateQuote(
+                        left, right, value, timestamp, " + ".join(sorted(combined))
+                    )
+                visited.add(target)
+                queue.append((target, value, timestamp, combined))
+        return None
+
+    @database_transaction
+    def get_rate(self, from_currency: str, to_currency: str) -> RateQuote:
+        from valutatrade_hub.core.currencies import get_currency
+
+        left, right = get_currency(from_currency).code, get_currency(to_currency).code
+        cache = self._storage.load_rates()
+        now = self._clock()
+        quote = self._find(self._graph(cache, now, allow_stale=False), left, right, now)
+        if quote is not None:
+            return quote
+        stale = self._find(self._graph(cache, now, allow_stale=True), left, right, now)
+        if stale is not None:
+            raise StaleRateError(left, right, utc_timestamp(stale.updated_at))
+        raise RateUnavailableError(left, right)
+
+    @database_transaction
+    def get_cached_rates(
+        self,
+        currency_code: str | None = None,
+        *,
+        top: int | None = None,
+        base_currency: str | None = None,
+    ) -> CachedRatesView:
+        """Отобрать курсы; топ определяется в USD до пересчёта базы вывода."""
+        from valutatrade_hub.core.currencies import CryptoCurrency, get_currency
+
+        if top is not None and (
+            isinstance(top, bool) or not isinstance(top, int) or top <= 0
+        ):
+            raise ValueError("'top' должен быть положительным целым числом")
+        cache = self._storage.load_rates()
+        now = self._clock()
+        graph = self._graph(cache, now, allow_stale=True)
+        if not graph:
+            raise ValueError(
+                "Локальный кеш курсов пуст. Выполните 'update-rates', "
+                "чтобы загрузить данные."
+            )
+        base = get_currency(
+            self._settings.get("default_base_currency")
+            if base_currency is None
+            else base_currency
+        ).code
+        if currency_code is not None:
+            code = normalize_currency(currency_code)
+            if code not in graph:
+                raise ValueError(f"Курс для '{code}' не найден в кеше.")
+            codes = [code]
+        else:
+            codes = sorted(set(graph) if top is not None else set(graph) - {base})
+        if top is not None:
+            ranked = []
+            for code in codes:
+                if not isinstance(get_currency(code), CryptoCurrency):
+                    continue
+                price = self._find(graph, code, "USD", now)
+                if price is None:
+                    raise RateUnavailableError(code, "USD")
+                ranked.append((code, price.rate))
+            if not ranked:
+                raise ValueError("В кеше нет курсов криптовалют для выбранного фильтра")
+            codes = [
+                code
+                for code, _ in sorted(ranked, key=lambda item: (-item[1], item[0]))[
+                    :top
+                ]
+            ]
+        quotes = []
+        for code in codes:
+            quote = self._find(graph, code, base, now)
+            if quote is None:
+                raise RateUnavailableError(code, base)
+            stale = (now - quote.updated_at).total_seconds() >= self.ttl_seconds
+            quotes.append(replace(quote, is_stale=stale))
+        if not quotes:
+            raise RateUnavailableError(base, base)
+        refresh = cache.get("last_refresh")
+        return CachedRatesView(
+            tuple(quotes), refresh if isinstance(refresh, str) else None
+        )

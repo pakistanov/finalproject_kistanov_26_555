@@ -11,14 +11,17 @@ from prettytable import PrettyTable
 from valutatrade_hub.core.currencies import get_supported_codes
 from valutatrade_hub.core.exceptions import (
     ApiRequestError,
+    AuthenticationError,
     CurrencyNotFoundError,
     InsufficientFundsError,
     RateUnavailableError,
     StorageError,
 )
-from valutatrade_hub.core.rates import CachedRatesView, RateQuote
+from valutatrade_hub.core.models import User
 from valutatrade_hub.core.usecases import PortfolioView, TradeResult, TradingService
+from valutatrade_hub.core.utils import CachedRatesView, RateQuote
 from valutatrade_hub.infra.database import DatabaseManager
+from valutatrade_hub.logging_config import parser_console_logging
 from valutatrade_hub.parser_service.updater import UpdateResult
 
 
@@ -70,12 +73,11 @@ def build_parser(*, global_options: bool = False) -> CommandParser:
     portfolio = commands.add_parser("show-portfolio", help="Посмотреть портфель")
     portfolio.add_argument("--base", help="Базовая валюта (по умолчанию из настроек)")
     for command, help_text in (
-        ("buy", "Купить валюту за USD"),
-        ("sell", "Продать валюту за USD"),
-        ("deposit", "Пополнить виртуальный USD-баланс"),
+        ("buy", "Увеличить баланс выбранной валюты"),
+        ("sell", "Уменьшить баланс выбранной валюты"),
     ):
         child = commands.add_parser(command, help=help_text)
-        child.add_argument("--currency", required=command != "deposit", default="USD")
+        child.add_argument("--currency", required=True)
         child.add_argument("--amount", required=True, type=float)
     rate = commands.add_parser("get-rate", help="Получить курс валюты")
     rate.add_argument("--from", dest="from_currency", required=True)
@@ -97,7 +99,7 @@ def build_parser(*, global_options: bool = False) -> CommandParser:
 def format_portfolio(view: PortfolioView) -> str:
     title = f"Портфель пользователя '{view.username}' (база: {view.base_currency})"
     if not view.wallets:
-        return f"{title}\nПортфель пуст. Пополните его: deposit --amount 1000"
+        return f"{title}\nПортфель пуст. Добавьте валюту командой buy."
     table = PrettyTable(["Валюта", "Баланс", f"Стоимость, {view.base_currency}"])
     table.align["Валюта"] = "l"
     table.align["Баланс"] = "r"
@@ -162,15 +164,13 @@ def format_quote(quote: RateQuote) -> str:
 
 def format_trade(trade: TradeResult) -> str:
     action = "Покупка" if trade.side == "buy" else "Продажа"
-    value_label = "Стоимость покупки" if trade.side == "buy" else "Выручка"
+    value_label = "Оценочная стоимость" if trade.side == "buy" else "Оценочная выручка"
     return (
         f"{action} выполнена: {trade.amount:.12g} {trade.currency_code} "
         f"по курсу {trade.quote.rate:.12g} USD/{trade.currency_code}\n"
         f"Изменения в портфеле:\n"
         f"- {trade.currency_code}: было {trade.previous_balance:.12g} "
         f"→ стало {trade.balance:.12g}\n"
-        f"- USD: было {trade.previous_usd_balance:.12g} "
-        f"→ стало {trade.usd_balance:.12g}\n"
         f"{value_label}: {trade.usd_value:,.2f} USD\n"
         f"Источник: {trade.quote.source}"
     )
@@ -183,6 +183,12 @@ class WalletApplication:
         self.service = service
         self.parser = build_parser()
         self.output = output
+        self.current_user: User | None = None
+
+    def _require_user(self) -> User:
+        if self.current_user is None:
+            raise AuthenticationError("Сначала выполните login")
+        return self.current_user
 
     def dispatch(self, arguments: argparse.Namespace) -> bool:
         """Вызвать сценарий и отобразить результат; False означает выход."""
@@ -196,32 +202,49 @@ class WalletApplication:
                     "--password ****"
                 )
             case "login":
+                self.current_user = None
                 user = self.service.login(arguments.username, arguments.password)
+                self.current_user = user
                 message = f"Вы вошли как '{user.username}'"
             case "logout":
-                self.service.logout()
+                self.current_user = None
                 message = "Вы вышли из учётной записи"
             case "show-portfolio":
-                message = format_portfolio(self.service.show_portfolio(arguments.base))
+                message = format_portfolio(
+                    self.service.show_portfolio(
+                        self._require_user().user_id, arguments.base
+                    )
+                )
             case "buy":
                 message = format_trade(
-                    self.service.buy(arguments.currency, arguments.amount)
+                    self.service.buy(
+                        self._require_user().user_id,
+                        arguments.currency,
+                        arguments.amount,
+                    )
                 )
             case "sell":
                 message = format_trade(
-                    self.service.sell(arguments.currency, arguments.amount)
+                    self.service.sell(
+                        self._require_user().user_id,
+                        arguments.currency,
+                        arguments.amount,
+                    )
                 )
-            case "deposit":
-                balance = self.service.deposit(arguments.currency, arguments.amount)
-                message = f"Виртуальный USD-баланс пополнен. Баланс: {balance:.12g} USD"
             case "get-rate":
                 message = format_quote(
                     self.service.get_rate(
-                        arguments.from_currency, arguments.to_currency
+                        arguments.from_currency,
+                        arguments.to_currency,
+                        user_id=self.current_user.user_id
+                        if self.current_user
+                        else None,
                     )
                 )
             case "update-rates":
-                message = format_update(self.service.update_rates(arguments.source))
+                with parser_console_logging(self.output):
+                    result = self.service.update_rates(arguments.source)
+                message = format_update(result)
             case "show-rates":
                 message = format_cached_rates(
                     self.service.show_rates(

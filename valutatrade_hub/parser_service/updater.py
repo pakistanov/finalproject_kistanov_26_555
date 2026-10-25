@@ -43,9 +43,19 @@ class RatesUpdater:
             )
         )
 
-    def _log(self, action: str, *, level: int = logging.INFO, **fields) -> None:
+    def _log(
+        self,
+        action: str,
+        *,
+        level: int = logging.INFO,
+        exc_info: bool = False,
+        **fields,
+    ) -> None:
         self.logger.log(
-            level, "parser", extra={"action_data": {"action": action, **fields}}
+            level,
+            "parser",
+            extra={"action_data": {"action": action, **fields}},
+            exc_info=exc_info,
         )
 
     def run_update(self) -> UpdateResult:
@@ -95,9 +105,23 @@ class RatesUpdater:
                     result="ERROR",
                     error_type=type(exc).__name__,
                     error_message=message,
+                    exc_info=True,
                 )
                 continue
             records.extend(source_records)
+            self._log(
+                "FETCH_DETAILS",
+                level=logging.DEBUG,
+                source=client.source,
+                requests=[
+                    {
+                        "pair": pair,
+                        "request_ms": metadata.get("meta", {}).get("request_ms"),
+                        "status_code": metadata.get("meta", {}).get("status_code"),
+                    }
+                    for pair, metadata in client.last_metadata.items()
+                ],
+            )
             self._log(
                 "FETCH_FINISH",
                 source=client.source,
@@ -109,6 +133,7 @@ class RatesUpdater:
             self._log("UPDATE_FINISH", level=logging.ERROR, result="ERROR", count=0)
             raise ApiRequestError(reason)
         try:
+            self._log("WRITE_START", count=len(records))
             saved = self.storage.save(records)
         except StorageError as exc:
             self._log(
