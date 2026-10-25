@@ -29,3 +29,4 @@ Thumbs.db
 # Local user data and cached quotes
 data/*.json
 data/.*.tmp
+logs/

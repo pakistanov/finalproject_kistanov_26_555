@@ -13,8 +13,11 @@ from valutatrade_hub.core.utils import validate_user_id
 class JsonStorage:
     """Локальное хранилище для одного запущенного экземпляра приложения."""
 
-    def __init__(self, data_dir: str | Path = "data") -> None:
+    def __init__(
+        self, data_dir: str | Path = "data", *, filenames: dict[str, str] | None = None
+    ) -> None:
         self.data_dir = Path(data_dir)
+        self._filenames = filenames or {}
         try:
             self.data_dir.mkdir(parents=True, exist_ok=True)
             for filename, default in (
@@ -22,7 +25,7 @@ class JsonStorage:
                 ("portfolios.json", []),
                 ("rates.json", {"source": "DemoStub", "last_refresh": None}),
             ):
-                if not (self.data_dir / filename).exists():
+                if not self._path(filename).exists():
                     self._write(filename, default)
         except OSError as exc:
             raise StorageError("Не удалось создать каталог данных") from exc
@@ -31,8 +34,11 @@ class JsonStorage:
     def _reject_constant(value: str) -> None:
         raise ValueError(f"Недопустимая JSON-константа: {value}")
 
+    def _path(self, filename: str) -> Path:
+        return self.data_dir / self._filenames.get(filename, filename)
+
     def _read(self, filename: str, expected_type: type) -> list | dict:
-        path = self.data_dir / filename
+        path = self._path(filename)
         try:
             with path.open(encoding="utf-8") as source:
                 data = json.load(source, parse_constant=self._reject_constant)
@@ -58,7 +64,7 @@ class JsonStorage:
                 target.write("\n")
                 target.flush()
                 os.fsync(target.fileno())
-            os.replace(temporary_path, self.data_dir / filename)
+            os.replace(temporary_path, self._path(filename))
         except (OSError, TypeError, ValueError) as exc:
             raise StorageError(f"Не удалось сохранить {filename}") from exc
         finally:

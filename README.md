@@ -25,6 +25,7 @@ sell --currency BTC --amount 0.01
 show-portfolio
 show-portfolio --base EUR
 get-rate --from USD --to BTC
+currencies
 logout
 help
 exit
@@ -43,18 +44,42 @@ exit
 - `portfolios.json` — портфели и балансы кошельков.
 - `rates.json` — кэш курсов со временем обновления.
 
-Используются фиксированные курсы; срок свежести кэша — 5 минут.
+Используются фиксированные курсы; срок свежести кэша по умолчанию — 5 минут.
+
+## Настройки и логи
+
+Настройки находятся в `[tool.valutatrade]` файла `pyproject.toml`: каталог
+и имена JSON-файлов, `rates_ttl_seconds`, `default_base_currency` и параметры
+логирования. `SettingsLoader` и `DatabaseManager` реализованы как Singleton.
+
+Операции `buy`, `sell` и запросы курсов записываются в `logs/actions.log`
+в формате JSON. Уровень — `INFO`, ротация — 1 МБ и 3 резервных файла.
+`log_verbose = true` добавляет балансы до и после сделки; `log_level = "DEBUG"`
+включает отладочный уровень. Каталог логов исключён из Git.
+
+## Ошибки
+
+- `buy`, `sell`: при нехватке средств выводятся доступная и требуемая суммы.
+- `buy`, `sell`, `get-rate`: при неизвестной валюте выводится список кодов.
+- При сбое получения курса предлагается повторить запрос или проверить сеть.
 
 ## Структура проекта
 
 ```text
 src/valutatrade_hub/
+├── logging_config.py   # настройка и ротация логов
+├── decorators.py       # log_action
 ├── core/
+│   ├── currencies.py   # Currency, FiatCurrency, CryptoCurrency
+│   ├── exceptions.py   # пользовательские исключения
 │   ├── models.py       # User, Wallet, Portfolio
 │   ├── utils.py        # валидация данных
 │   ├── usecases.py     # бизнес-логика
 │   ├── storage.py      # работа с JSON
 │   └── rates.py        # получение курсов
+├── infra/
+│   ├── settings.py     # SettingsLoader
+│   └── database.py     # DatabaseManager
 └── cli/
     └── interface.py    # командный интерфейс
 main.py                 # запуск приложения
