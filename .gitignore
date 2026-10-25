@@ -25,3 +25,7 @@ htmlcov/
 # Operating systems
 .DS_Store
 Thumbs.db
+
+# Local user data and cached quotes
+data/*.json
+data/.*.tmp
