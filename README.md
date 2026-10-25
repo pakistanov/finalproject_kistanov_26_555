@@ -1,228 +1,122 @@
 # finalproject_kistanov_26_555
 
-Учебная платформа для управления виртуальным портфелем фиатных и
-криптовалют. Реализованы модели `User`, `Wallet`, `Portfolio`, регистрация,
-вход, покупка, продажа, оценка портфеля и получение курсов через CLI.
-Проект оформлен как устанавливаемый Python-пакет со структурой `src/`.
-
-Parser Service пока заменён `StubRateProvider`: используются фиксированные
-демонстрационные курсы. Сетевых запросов и реальных денежных операций нет.
-Подключение внешних API, отдельный Parser Service и история транзакций
-относятся к следующим этапам; разделы 2.1–2.2 используют локальные JSON-файлы.
-
-Фамилия: `kistanov`, группа: `26-555`. В имени Python-пакета разделители
-номера группы заменены подчёркиваниями: `finalproject_kistanov_26_555`.
-
-## Окружение и зависимости
-
-- Python 3.14; версия закреплена в `.python-version`.
-- `uv` — окружение, зависимости и сборка пакета.
-- `prettytable` — форматированный вывод портфеля.
-- `ruff` — зависимость для разработки: анализ и форматирование кода.
-- `json`, `shlex`, `time` входят в стандартную библиотеку Python;
-  устанавливать их отдельно не нужно. `shlex` разбирает команды самого
-  приложения, без передачи их системной оболочке. В Windows используется
-  тот же синтаксис кавычек для внутренних команд, что и в примерах ниже.
+ValutaTrade Hub — консольное приложение для виртуального валютного портфеля:
+регистрация, вход, покупка и продажа валют, оценка портфеля и просмотр курсов.
+Python 3.14, uv, PrettyTable, requests, Ruff; хранение данных в JSON.
 
 ## Установка и запуск
 
-Из корня проекта выполните:
-
 ```powershell
+git clone https://github.com/pakistanov/finalproject_kistanov_26_555.git
+cd finalproject_kistanov_26_555
 uv sync --locked
 uv run finalproject_kistanov_26_555
-uv run finalproject_kistanov_26_555 --help
-uv run finalproject_kistanov_26_555 --version
 ```
 
-Без аргументов открывается интерактивная оболочка. Альтернативные способы
-запуска той же оболочки:
+Перед обновлением курсов скопируйте `.env.example` в `.env` в корне проекта
+и заполните ключи [ExchangeRate-API](https://www.exchangerate-api.com/)
+и [CoinGecko Demo](https://www.coingecko.com/en/developers/dashboard).
+Файл читается автоматически; переменные окружения имеют приоритет.
+`.env` не попадает в Git и сборку.
 
-```powershell
-uv run python -m finalproject_kistanov_26_555
-uv run python -m valutatrade_hub
-uv run main.py
-```
+## Команды
 
-`uv` создаёт `.venv` и устанавливает в неё пакет и зависимости.
-Активировать окружение вручную не требуется. Кэш `uv` хранится внутри
-проекта в `.uv-cache/` согласно `uv.toml` и исключён из Git.
-
-## Пример сеанса
-
-После запуска приложения введите команды в приглашении `valuta>`:
+В консоли приложения:
 
 ```text
+update-rates
 register --username alice --password 1234
 login --username alice --password 1234
-show-portfolio
-deposit --amount 10000
 buy --currency BTC --amount 0.05
 sell --currency BTC --amount 0.01
 show-portfolio
 show-portfolio --base EUR
 get-rate --from USD --to BTC
+show-rates --top 3
+show-rates --currency RUB
+show-rates --base EUR
+currencies
 logout
+help
 exit
 ```
 
-Новый портфель пуст. Дополнительная команда `deposit` пополняет его
-виртуальными USD для начала симуляции. Покупка списывает `amount × rate`
-из USD-кошелька и зачисляет `amount` единиц выбранной валюты. Продажа
-списывает валюту и начисляет USD. Количество задаётся в единицах валюты,
-а не в долларах. При нехватке средств сделка не сохраняется.
-USD — расчётная валюта: в `buy` и `sell` укажите другую валюту.
+Выбрана упрощённая модель из задания: `buy` увеличивает баланс валюты,
+`sell` уменьшает его. USD используется для оценки, списания и зачисления USD
+не выполняются. `amount` — количество валюты; новый портфель пуст.
+Пароль — минимум 4 символа. Справка по аргументам: `buy --help`.
 
-В примере после покупки и продажи остаётся `0.04 BTC`, `7626.5116 USD`,
-а общая стоимость портфеля по демонстрационному курсу составляет `10000 USD`.
+Сессия живёт до выхода из приложения. Повторный `login` заменяет пользователя;
+неудачный вход сбрасывает сессию. Торговля и просмотр портфеля требуют входа.
 
-Имена и пароли с пробелами заключайте в кавычки:
+`update-rates --source coingecko` и `update-rates --source exchangerate`
+обновляют один источник. `show-rates --top N` выбирает N самых дорогих
+криптовалют по цене в USD, затем переводит значения в указанную базу.
 
-```text
-register --username "Alice Smith" --password "my password"
-login --username "Alice Smith" --password "my password"
-```
+## Данные, кэш и Parser Service
 
-| Команда | Аргументы | Результат |
-| --- | --- | --- |
-| `register` | `--username`, `--password` | Новый пользователь и пустой портфель |
-| `login` | `--username`, `--password` | Вход в текущем процессе |
-| `show-portfolio` | `--base USD` (необязательно) | Балансы, стоимость каждой валюты и итог |
-| `buy` | `--currency`, `--amount` | Покупка валюты за USD |
-| `sell` | `--currency`, `--amount` | Продажа валюты за USD |
-| `get-rate` | `--from`, `--to` | Прямой и обратный курсы, время и источник |
-| `deposit` | `--amount`, `--currency USD` (необязательно) | Пополнение виртуальных USD |
-| `logout` | — | Выход из учётной записи |
-| `help` | — | Справка; также доступно `buy --help` |
-| `exit` / `quit` | — | Завершение приложения |
+В `data/`: `users.json` — пользователи с солью и хешем пароля,
+`portfolios.json` — кошельки, `rates.json` — текущие курсы,
+`exchange_rates.json` — история курсов. В репозитории файлы инициализированы пустыми.
 
-Сессия существует в памяти одного процесса. Для торговли выполняйте `login`
-и последующие команды внутри одной оболочки. При перезапуске нужен новый
-вход; пользователи и балансы сохраняются. Ошибки команд и вызов справки
-не завершают интерактивный сеанс. Завершить его можно также Ctrl+C или EOF.
+Core использует локальный кэш. TTL по умолчанию — 300 секунд; при устаревании
+`get-rate` и торговые команды предлагают выполнить `update-rates`.
+`show-rates` показывает состояние свежести. При отказе одного API сохраняются
+данные остальных и предыдущие пары; при отказе всех кэш не перезаписывается.
 
-Независимые команды доступны без оболочки:
+Настройки путей, TTL, базовой валюты, API и логов — в `[tool.valutatrade]`
+файла `pyproject.toml`. Действия записываются в `logs/actions.log`, обновления —
+в `logs/parser.log`; журналы JSON с ротацией. Во время `update-rates` краткий
+ход обновления выводится также в консоль. `log_verbose = true` добавляет балансы
+до и после сделки. Ключи API хранятся только в окружении или `.env`.
+
+Периодическое обновление (остановка — Ctrl+C):
 
 ```powershell
-uv run finalproject_kistanov_26_555 get-rate --from EUR --to USD
-uv run finalproject_kistanov_26_555 --data-dir ./another-data get-rate --from BTC --to USD
+uv run python -m valutatrade_hub.parser_service.scheduler --interval 300
 ```
 
-## Данные и курсы
+## Структура
 
-При первом запуске автоматически создаются:
+```text
+valutatrade_hub/
+├── core/            # models.py, currencies.py, exceptions.py, usecases.py, utils.py
+├── infra/           # settings.py, database.py
+├── parser_service/  # config.py, api_clients.py, updater.py, storage.py, scheduler.py
+├── cli/             # interface.py
+├── decorators.py
+└── logging_config.py
+data/                # четыре JSON-файла
+demo/                # запись работы
+main.py              # точка входа
+pyproject.toml
+uv.lock
+Makefile
+```
 
-- `data/users.json` — идентификатор, имя, SHA-256-хеш пароля, уникальная
-  случайная соль и дата регистрации; открытые пароли не сохраняются.
-- `data/portfolios.json` — портфели и кошельки, связанные через `user_id`.
-- `data/rates.json` — котировки, время обновления и источник.
-
-Локальные JSON-файлы исключены из Git. Другой каталог задаётся через
-`--data-dir` перед командой или переменную `VALUTATRADE_DATA_DIR`.
-Подробности хранения и ограничения записи описаны в [data/README.md](data/README.md).
-
-`RateService.get_rate(from_currency, to_currency)` возвращает объект
-`RateQuote` с полями `from_currency`, `to_currency`, `rate`, `updated_at`
-и `source`. `rate` — цена одной единицы исходной валюты в целевой.
-
-Сервис читает свежий прямой или обратный курс из кэша, а также рассчитывает
-кросс-курсы через USD. Записи моложе 300 секунд считаются свежими. Иначе
-недостающие котировки берутся из заглушки и сохраняются в кэше. Даты — UTC;
-время обновления заглушки означает время получения фиксированных данных.
-Устаревший недоступный курс не используется для сделки.
-
-| Валюта | Фиктивная цена одной единицы в USD |
-| --- | ---: |
-| USD | 1.0 |
-| EUR | 1.0786 |
-| BTC | 59337.21 |
-| RUB | 0.01016 |
-| ETH | 3720.0 |
-
-Коды валют нормализуются в верхний регистр. Имя не может быть пустым,
-пароль должен содержать минимум 4 символа. Суммы должны быть положительными
-конечными числами; отрицательные балансы, `bool`, `NaN` и бесконечность
-не допускаются. Согласно заданию расчёты используют `float`; вывод
-стоимости округляется до двух знаков, балансы хранятся без такого округления.
-
-## Качество кода
+## Проверка и сборка
 
 ```powershell
 uv run ruff check .
 uv run ruff format --check .
-uv run python -m unittest discover -s tests -v
+uv build
 ```
 
-Для применения исправлений и форматирования:
-
-```powershell
-uv run ruff check --fix .
-uv run ruff format .
-```
-
-Включены проверки ошибок, импортов, распространённых проблем и современного
-синтаксиса Python. Длина строки — 88 символов. Тесты используют `unittest`
-из стандартной библиотеки и отдельный временный каталог для каждого теста:
-проверяют сделки, сессии, кэш, ошибки CLI и сохранность JSON при сбоях.
-
-## Сборка и установка пакета
-
-```powershell
-uv --no-cache build
-```
-
-В `dist/` появятся wheel (`.whl`) и исходный архив (`.tar.gz`).
-Wheel можно установить в отдельное окружение:
+Пакеты создаются в `dist/`. Установка wheel в отдельное окружение:
 
 ```powershell
 uv venv .venv-install
-uv pip install --python .venv-install/Scripts/python.exe dist/finalproject_kistanov_26_555-0.1.0-py3-none-any.whl
-.venv-install/Scripts/finalproject_kistanov_26_555.exe --version
+uv pip install --python .venv-install dist/finalproject_kistanov_26_555-0.1.0-py3-none-any.whl
+.venv-install/Scripts/finalproject_kistanov_26_555.exe
 ```
 
-Окружение `.venv-install/` исключено из Git правилом `.venv*/`.
+При установленном GNU Make доступны `make install`, `make run`, `make lint`,
+`make format`, `make check`, `make build`, `make package-install`.
+Разработка ведётся по Gitflow: `feature/*` → `develop` → `release/*` → `main`.
 
-## Структура проекта
+## Демонстрация
 
-```text
-FinalProject/
-├── data/                       # JSON создаются при запуске
-│   └── README.md
-├── main.py
-├── pyproject.toml
-├── README.md
-├── tests/
-├── uv.lock
-├── uv.toml
-└── src/
-    ├── finalproject_kistanov_26_555/  # совместимый запуск через python -m
-    └── valutatrade_hub/
-        ├── __main__.py
-        ├── core/
-        │   ├── models.py       # User, Wallet, Portfolio
-        │   ├── utils.py        # общие валидаторы
-        │   ├── exceptions.py
-        │   ├── storage.py      # работа с JSON
-        │   ├── rates.py        # RateQuote, кэш и заглушка
-        │   └── usecases.py     # бизнес-логика и текущая сессия
-        └── cli/
-            └── interface.py    # единственный обработчик команд
-```
+Полный цикл команд, обновление курсов и обработка ошибок:
+[запись asciinema](demo/demo.cast) (`asciinema play demo/demo.cast`).
 
-## Работа с Git
-
-Основная ветка репозитория — `main`.
-Для разработки используйте GitHub Flow: отдельная ветка на задачу,
-проверки качества перед коммитом, затем слияние в `main`.
-
-```powershell
-git switch -c feature/next-task
-uv run ruff check .
-uv run ruff format --check .
-uv run python -m unittest discover -s tests
-git add .
-git commit -m "feat: describe completed task"
-```
-
-Фиксируйте завершённые задачи небольшими осмысленными коммитами.
-`uv.lock` хранится в репозитории для воспроизводимой установки зависимостей.
+![Демонстрация приложения](demo/demo.gif)

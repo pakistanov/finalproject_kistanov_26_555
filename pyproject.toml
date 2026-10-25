@@ -6,18 +6,25 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "prettytable>=3.18.0",
+    "python-dotenv>=1.2.4",
+    "requests>=2.34.2",
 ]
 
 [project.scripts]
-finalproject_kistanov_26_555 = "valutatrade_hub.cli.interface:main"
+finalproject_kistanov_26_555 = "main:main"
 
 [build-system]
-requires = ["uv_build>=0.13.0,<0.14.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
 
-[tool.uv.build-backend]
-module-name = ["finalproject_kistanov_26_555", "valutatrade_hub"]
-source-include = ["main.py", "tests/**", "data/README.md", "uv.lock"]
+[tool.hatch.build.targets.wheel]
+only-include = ["valutatrade_hub", "main.py"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/valutatrade_hub", "/main.py", "/pyproject.toml", "/uv.lock",
+           "/uv.toml", "/.python-version", "/Makefile", "/README.md",
+           "/.gitignore", "/.env.example", "/data/*.json", "/demo/*.cast", "/demo/*.gif"]
+exclude = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
 target-version = "py314"
@@ -25,7 +32,7 @@ line-length = 88
 extend-exclude = [".uv-cache", ".venv-install"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "D100", "D101", "D102", "D103", "D104", "D105", "D107"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -35,3 +42,25 @@ indent-style = "space"
 dev = [
     "ruff>=0.17.2",
 ]
+
+[tool.valutatrade]
+data_dir = "data"
+users_file = "users.json"
+portfolios_file = "portfolios.json"
+rates_file = "rates.json"
+history_file = "exchange_rates.json"
+rates_ttl_seconds = 300
+default_base_currency = "USD"
+log_dir = "logs"
+log_file = "actions.log"
+parser_log_file = "parser.log"
+log_format = "json"
+log_level = "INFO"
+log_max_bytes = 1048576
+log_backup_count = 3
+log_verbose = false
+parser_base_currency = "USD"
+parser_fiat_currencies = ["EUR", "GBP", "RUB"]
+parser_crypto_currencies = ["BTC", "ETH", "SOL"]
+request_timeout = 10
+update_interval_seconds = 300

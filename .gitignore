@@ -26,6 +26,6 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Local user data and cached quotes
-data/*.json
+# Temporary JSON files and local logs
 data/.*.tmp
+logs/

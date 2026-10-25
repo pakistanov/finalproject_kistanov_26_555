@@ -5,10 +5,10 @@ import hmac
 import secrets
 from datetime import UTC, datetime
 
+from valutatrade_hub.core.currencies import Currency, get_currency
 from valutatrade_hub.core.exceptions import InsufficientFundsError
 from valutatrade_hub.core.utils import (
-    DEFAULT_EXCHANGE_RATES,
-    normalize_currency,
+    EXCHANGE_RATES,
     parse_timestamp,
     validate_number,
     validate_password,
@@ -28,6 +28,7 @@ class User:
         salt: str,
         registration_date: datetime,
     ) -> None:
+        """Восстановить пользователя из проверенных полей хранилища."""
         self._user_id = validate_user_id(user_id)
         self.username = username
         if not isinstance(hashed_password, str) or not hashed_password:
@@ -59,26 +60,32 @@ class User:
 
     @property
     def user_id(self) -> int:
+        """Вернуть идентификатор пользователя."""
         return self._user_id
 
     @property
     def username(self) -> str:
+        """Вернуть имя пользователя."""
         return self._username
 
     @username.setter
     def username(self, value: str) -> None:
+        """Проверить и установить имя пользователя."""
         self._username = validate_username(value)
 
     @property
     def hashed_password(self) -> str:
+        """Вернуть хеш пароля."""
         return self._hashed_password
 
     @property
     def salt(self) -> str:
+        """Вернуть индивидуальную соль."""
         return self._salt
 
     @property
     def registration_date(self) -> datetime:
+        """Вернуть дату регистрации."""
         return self._registration_date
 
     def get_user_info(self) -> dict:
@@ -112,6 +119,7 @@ class User:
 
     @classmethod
     def from_dict(cls, data: dict) -> User:
+        """Восстановить пользователя из JSON-полей и ISO-даты регистрации."""
         return cls(
             data["user_id"],
             data["username"],
@@ -125,19 +133,28 @@ class Wallet:
     """Кошелёк одной валюты с неотрицательным конечным балансом."""
 
     def __init__(self, currency_code: str, balance: float = 0.0) -> None:
-        self._currency_code = normalize_currency(currency_code)
+        """Создать кошелёк поддерживаемой валюты с проверенным балансом."""
+        self._currency = get_currency(currency_code)
         self.balance = balance
 
     @property
     def currency_code(self) -> str:
-        return self._currency_code
+        """Вернуть код валюты кошелька."""
+        return self._currency.code
+
+    @property
+    def currency(self) -> Currency:
+        """Описание валюты без возможности изменить валюту самого кошелька."""
+        return get_currency(self.currency_code)
 
     @property
     def balance(self) -> float:
+        """Вернуть баланс кошелька."""
         return self._balance
 
     @balance.setter
     def balance(self, value: float) -> None:
+        """Проверить и установить баланс кошелька."""
         self._balance = validate_number(value, name="balance")
 
     def deposit(self, amount: float) -> None:
@@ -152,15 +169,13 @@ class Wallet:
         """Списать сумму, если средств достаточно."""
         amount = validate_number(amount, name="amount", positive=True)
         if amount > self.balance:
-            raise InsufficientFundsError(
-                f"Недостаточно средств: доступно {self.balance:.8f} "
-                f"{self.currency_code}, требуется {amount:.8f} {self.currency_code}"
-            )
+            raise InsufficientFundsError(self.balance, amount, self.currency_code)
         if self.balance - amount == self.balance:
             raise ValueError("Сумма слишком мала для изменения баланса")
         self.balance -= amount
 
     def get_balance_info(self) -> dict:
+        """Вернуть код валюты и баланс без изменения кошелька."""
         return {"currency_code": self.currency_code, "balance": self.balance}
 
 
@@ -172,17 +187,18 @@ class Portfolio:
         user_id: int,
         wallets: dict[str, Wallet] | None = None,
         *,
-        user: User,
+        user: User | None = None,
     ) -> None:
+        """Создать портфель с копией словаря и необязательным объектом User."""
         self._user_id = validate_user_id(user_id)
-        if not isinstance(user, User) or user.user_id != user_id:
+        if user is not None and (not isinstance(user, User) or user.user_id != user_id):
             raise ValueError("Пользователь не соответствует владельцу портфеля")
         self._user = user
         if wallets is not None and not isinstance(wallets, dict):
             raise ValueError("Кошельки должны быть словарём")
         self._wallets: dict[str, Wallet] = {}
         for code, wallet in (wallets or {}).items():
-            code = normalize_currency(code)
+            code = get_currency(code).code
             if not isinstance(wallet, Wallet) or wallet.currency_code != code:
                 raise ValueError("Код валюты не соответствует кошельку")
             if code in self._wallets:
@@ -191,10 +207,12 @@ class Portfolio:
 
     @property
     def user_id(self) -> int:
+        """Вернуть идентификатор пользователя."""
         return self._user_id
 
     @property
-    def user(self) -> User:
+    def user(self) -> User | None:
+        """Вернуть переданный объект пользователя."""
         return self._user
 
     @property
@@ -203,7 +221,8 @@ class Portfolio:
         return self._wallets.copy()
 
     def add_currency(self, currency_code: str) -> Wallet:
-        code = normalize_currency(currency_code)
+        """Создать пустой кошелёк; отклонить повторное добавление валюты."""
+        code = get_currency(currency_code).code
         if code in self._wallets:
             raise ValueError(f"Кошелёк '{code}' уже существует")
         wallet = Wallet(code)
@@ -211,7 +230,8 @@ class Portfolio:
         return wallet
 
     def get_wallet(self, currency_code: str) -> Wallet:
-        code = normalize_currency(currency_code)
+        """Получить существующий кошелёк либо сообщить об его отсутствии."""
+        code = get_currency(currency_code).code
         if code not in self._wallets:
             raise ValueError(
                 f"У вас нет кошелька '{code}'. "
@@ -222,25 +242,39 @@ class Portfolio:
     def get_total_value(
         self,
         base_currency: str = "USD",
-        exchange_rates: dict[str, float] | None = None,
+        rates: dict | None = None,
     ) -> float:
-        """Оценить портфель, используя цены одной единицы валюты в USD."""
-        base = normalize_currency(base_currency)
-        rates = DEFAULT_EXCHANGE_RATES if exchange_rates is None else exchange_rates
-        if base not in rates:
-            raise ValueError(f"Неизвестная базовая валюта '{base}'")
-        base_rate = validate_number(rates[base], name="rate", positive=True)
-        values = []
-        for code, wallet in self._wallets.items():
-            if wallet.balance == 0:
-                continue
-            if code not in rates:
-                raise ValueError(f"Не удалось получить курс для {code}→{base}")
-            rate = validate_number(rates[code], name="rate", positive=True)
-            values.append(wallet.balance * (rate / base_rate))
+        """Конвертировать через USD по переданным курсам или учебной заглушке.
+
+        rates принимает цены по кодам (BTC) либо пары X_USD с числами
+        или объектами {"rate": ...}. Модель не читает файлы и не вызывает API.
+        """
+        base = get_currency(base_currency).code
+        if rates is not None and not isinstance(rates, dict):
+            raise ValueError("Курсы должны быть словарём")
+        prices = EXCHANGE_RATES if rates is None else rates.get("pairs", rates)
+        if not isinstance(prices, dict):
+            raise ValueError("Курсы должны быть словарём")
+
+        def usd_rate(code: str) -> float:
+            if code == "USD":
+                return 1.0
+            value = prices.get(code, prices.get(f"{code}_USD"))
+            if isinstance(value, dict):
+                value = value.get("rate")
+            if value is None:
+                raise ValueError(f"Не удалось получить курс для {code}→USD")
+            return validate_number(value, name="rate", positive=True)
+
+        base_rate = usd_rate(base)
+        values = [
+            wallet.balance * (usd_rate(code) / base_rate)
+            for code, wallet in self._wallets.items()
+        ]
         return validate_number(sum(values), name="total_value")
 
     def to_dict(self) -> dict:
+        """Вернуть JSON-представление идентификатора и кошельков портфеля."""
         return {
             "user_id": self.user_id,
             "wallets": {
